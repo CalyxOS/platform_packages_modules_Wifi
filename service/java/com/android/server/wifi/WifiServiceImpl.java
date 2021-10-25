@@ -42,6 +42,7 @@ import android.Manifest;
 import android.annotation.CheckResult;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.app.AlarmManager;
 import android.app.AppOpsManager;
 import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
@@ -53,6 +54,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.database.ContentObserver;
 import android.net.DhcpInfo;
 import android.net.DhcpResultsParcelable;
 import android.net.InetAddresses;
@@ -113,6 +115,7 @@ import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.WorkSource;
@@ -183,6 +186,9 @@ public class WifiServiceImpl extends BaseWifiService {
     private static final int RUN_WITH_SCISSORS_TIMEOUT_MILLIS = 4000;
     @VisibleForTesting
     static final int AUTO_DISABLE_SHOW_KEY_COUNTDOWN_MILLIS = 24 * 60 * 60 * 1000;
+
+    // Settings.Global.WIFI_OFF_TIMEOUT
+    private static final String WIFI_OFF_TIMEOUT = "wifi_off_timeout";
 
     private final ActiveModeWarden mActiveModeWarden;
     private final ScanRequestProxy mScanRequestProxy;
@@ -512,6 +518,8 @@ public class WifiServiceImpl extends BaseWifiService {
             intentFilter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
             intentFilter.addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED);
             intentFilter.addAction(Intent.ACTION_SHUTDOWN);
+            intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
+            intentFilter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION);
             mContext.registerReceiver(new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
@@ -544,6 +552,9 @@ public class WifiServiceImpl extends BaseWifiService {
                         handleIdleModeChanged();
                     } else if (action.equals(Intent.ACTION_SHUTDOWN)) {
                         handleShutDown();
+                    } else if (action.equals(WifiManager.NETWORK_STATE_CHANGED_ACTION) ||
+                            action.equals(WifiManager.WIFI_STATE_CHANGED_ACTION)) {
+                            setWifiTimeout();
                     }
                 }
             }, intentFilter);
@@ -558,6 +569,18 @@ public class WifiServiceImpl extends BaseWifiService {
             mCountryCode.registerListener(new CountryCodeListenerProxy());
             mTetheredSoftApTracker.handleBootCompleted();
             mWifiInjector.getSarManager().handleBootCompleted();
+
+            mContext.getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor(WIFI_OFF_TIMEOUT),
+                    false,
+                    new ContentObserver(new Handler(mContext.getMainLooper())) {
+                        @Override
+                        public void onChange(boolean selfChange) {
+                            super.onChange(selfChange);
+                            setWifiTimeout();
+                        }
+                    }
+            );
         });
     }
 
@@ -578,6 +601,24 @@ public class WifiServiceImpl extends BaseWifiService {
     public void handleUserStop(int userId) {
         Log.d(TAG, "Handle user stop " + userId);
         mWifiThreadRunner.post(() -> mWifiConfigManager.handleUserStop(userId));
+    }
+
+    private void setWifiTimeout() {
+        long wifiTimeoutMillis = Settings.Global.getLong(mContext.getContentResolver(),
+                WIFI_OFF_TIMEOUT, 0);
+        AlarmManager alarmManager = mContext.getSystemService(AlarmManager.class);
+        AlarmManager.OnAlarmListener wifiTimeoutListener = () -> {
+            if (getWifiEnabledState() == WifiManager.WIFI_STATE_ENABLED
+                    && getCurrentNetwork() == null) {
+                setWifiEnabled(mContext.getPackageName(), false);
+            }
+        };
+        alarmManager.cancel(wifiTimeoutListener);
+        if (wifiTimeoutMillis != 0) {
+            final long timeout = SystemClock.elapsedRealtime() + wifiTimeoutMillis;
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout,
+                    TAG, new Handler(mContext.getMainLooper()), wifiTimeoutListener);
+        }
     }
 
     /**
