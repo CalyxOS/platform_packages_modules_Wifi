@@ -44,6 +44,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.AlarmManager;
 import android.app.AppOpsManager;
+import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -607,16 +608,21 @@ public class WifiServiceImpl extends BaseWifiService {
         long wifiTimeoutMillis = Settings.Global.getLong(mContext.getContentResolver(),
                 WIFI_OFF_TIMEOUT, 0);
         AlarmManager alarmManager = mContext.getSystemService(AlarmManager.class);
-        AlarmManager.OnAlarmListener wifiTimeoutListener = () -> setWifiEnabled(
-                mContext.getPackageName(), false);
-        if (wifiTimeoutMillis != 0 && getWifiEnabledState() == WifiManager.WIFI_STATE_ENABLED &&
-                getCurrentNetwork() == null) {
+        Intent intent = new Intent("MAGIC_STRING");
+        intent.setClass(context, TODO(SOMEWHERE).class);
+
+        PendingIntent pending = PendingIntent.getBroadcast(mContext, 0 /* ignored */, intent,
+                PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
+        if (pending != null) {
+            // Cancel any previous timeout requests
+            cancel(pending);
+        }
+        pending = PendingIntent.getBroadcast(mContext, 0 /* ignored */, intent,
+                PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        if (wifiTimeoutMillis != 0) {
             final long timeout = SystemClock.elapsedRealtime() + wifiTimeoutMillis;
-            alarmManager.cancel(wifiTimeoutListener);
-            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout, TAG,
-                    wifiTimeoutListener, new Handler(mContext.getMainLooper()));
-        } else {
-            alarmManager.cancel(wifiTimeoutListener);
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout, pending);
         }
     }
 
