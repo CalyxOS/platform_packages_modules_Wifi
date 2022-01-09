@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "c7ee94e0_f8d267f7",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000034
+      },
+      "writtenOn": "2022-01-09T18:06:52Z",
+      "side": 1,
+      "message": "Need to label the intent ( not MAGIC_STRING ) and find where we want to put it.\nWith pending intent the receiver will get the current id perms, so we can put it almost anywhere",
+      "revId": "0a4fb40691f1be48cd12de9f260e8297d543c712",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
