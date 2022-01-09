@@ -607,16 +607,17 @@ public class WifiServiceImpl extends BaseWifiService {
         long wifiTimeoutMillis = Settings.Global.getLong(mContext.getContentResolver(),
                 WIFI_OFF_TIMEOUT, 0);
         AlarmManager alarmManager = mContext.getSystemService(AlarmManager.class);
-        AlarmManager.OnAlarmListener wifiTimeoutListener = () -> setWifiEnabled(
-                mContext.getPackageName(), false);
-        if (wifiTimeoutMillis != 0 && getWifiEnabledState() == WifiManager.WIFI_STATE_ENABLED &&
-                getCurrentNetwork() == null) {
+        AlarmManager.OnAlarmListener wifiTimeoutListener = () -> {
+            if (getWifiEnabledState() == WifiManager.WIFI_STATE_ENABLED
+                    && getCurrentNetwork() == null) {
+                setWifiEnabled(mContext.getPackageName(), false);
+            }
+        };
+        alarmManager.cancel(wifiTimeoutListener);
+        if (wifiTimeoutMillis != 0) {
             final long timeout = SystemClock.elapsedRealtime() + wifiTimeoutMillis;
-            alarmManager.cancel(wifiTimeoutListener);
-            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout, TAG,
-                    wifiTimeoutListener, new Handler(mContext.getMainLooper()));
-        } else {
-            alarmManager.cancel(wifiTimeoutListener);
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout,
+                    TAG, new Handler(mContext.getMainLooper()), wifiTimeoutListener);
         }
     }
 
