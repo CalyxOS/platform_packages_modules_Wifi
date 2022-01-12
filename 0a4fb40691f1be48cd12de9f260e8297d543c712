@@ -16,6 +16,23 @@
       "message": "Need to label the intent ( not MAGIC_STRING ) and find where we want to put it.\nWith pending intent the receiver will get the current id perms, so we can put it almost anywhere",
       "revId": "0a4fb40691f1be48cd12de9f260e8297d543c712",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "8953d7ce_8d0c017f",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000000
+      },
+      "writtenOn": "2022-01-12T21:36:08Z",
+      "side": 1,
+      "message": "Handled by https://review.calyxos.org/c/CalyxOS/platform_packages_modules_Wifi/+/7869",
+      "revId": "0a4fb40691f1be48cd12de9f260e8297d543c712",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
