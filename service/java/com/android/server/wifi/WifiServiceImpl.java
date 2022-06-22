@@ -54,6 +54,7 @@ import android.annotation.CheckResult;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.AlarmManager;
+import android.app.AlarmManager.OnAlarmListener;
 import android.app.AppOpsManager;
 import android.app.admin.DevicePolicyManager;
 import android.app.admin.WifiSsidPolicy;
@@ -273,6 +274,16 @@ public class WifiServiceImpl extends BaseWifiService {
     private final BuildProperties mBuildProperties;
 
     private final DefaultClientModeManager mDefaultClientModeManager;
+
+    private final OnAlarmListener mWifiTimeoutListener = new OnAlarmListener() {
+        @Override
+        public void onAlarm() {
+            if (getWifiEnabledState() == WifiManager.WIFI_STATE_ENABLED
+                    && getCurrentNetwork() == null) {
+                setWifiEnabled(mContext.getPackageName(), false);
+            }
+        }
+    };
 
     @VisibleForTesting
     public final CountryCodeTracker mCountryCodeTracker;
@@ -842,17 +853,11 @@ public class WifiServiceImpl extends BaseWifiService {
         long wifiTimeoutMillis = Settings.Global.getLong(mContext.getContentResolver(),
                 WIFI_OFF_TIMEOUT, 0);
         AlarmManager alarmManager = mContext.getSystemService(AlarmManager.class);
-        AlarmManager.OnAlarmListener wifiTimeoutListener = () -> {
-            if (getWifiEnabledState() == WifiManager.WIFI_STATE_ENABLED
-                    && getCurrentNetwork() == null) {
-                setWifiEnabled(mContext.getPackageName(), false);
-            }
-        };
-        alarmManager.cancel(wifiTimeoutListener);
+        alarmManager.cancel(mWifiTimeoutListener);
         if (wifiTimeoutMillis != 0) {
             final long timeout = SystemClock.elapsedRealtime() + wifiTimeoutMillis;
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout,
-                    TAG, new Handler(mContext.getMainLooper()), wifiTimeoutListener);
+                    TAG, new Handler(mContext.getMainLooper()), mWifiTimeoutListener);
         }
     }
 
