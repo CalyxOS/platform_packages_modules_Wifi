@@ -69,6 +69,24 @@
       "parentUuid": "f5e25e6f_82b84ce3",
       "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "318566c9_0e1e217c",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000062
+      },
+      "writtenOn": "2022-12-19T19:57:54Z",
+      "side": 1,
+      "message": "Looks like the tests expect those 3 constants to maintain their existing size relationship. So we need to make sure _MIN is the smallest, _MAX is the largest, and _DISCONNECT_MS is somewhere in the middle - for example, _MIN of 20min, _DISCONNECT_MS of 25min, _MAX of 30min. Then, the tests pass, except for `testNonPersistentMacRandomizationEvery24Hours`. That one would need to be changed or turned off.\n\nIt\u0027s either that or updating all the affected tests.",
+      "parentUuid": "ef2bdf75_9bd1e5f0",
+      "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
