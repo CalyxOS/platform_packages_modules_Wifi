@@ -214,7 +214,7 @@ public class WifiConfigManager {
     @VisibleForTesting
     protected static final long NON_PERSISTENT_MAC_REFRESH_MS_MIN = 30 * 60 * 1000; // 30 minutes
     @VisibleForTesting
-    protected static final long NON_PERSISTENT_MAC_REFRESH_MS_MAX = 24 * 60 * 60 * 1000; // 24 hours
+    protected static final long NON_PERSISTENT_MAC_REFRESH_MS_MAX = 30 * 60 * 1000; // 30 minutes
 
     private static final MacAddress DEFAULT_MAC_ADDRESS =
             MacAddress.fromString(WifiInfo.DEFAULT_MAC_ADDRESS);
