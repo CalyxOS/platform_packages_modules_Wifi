@@ -87,6 +87,24 @@
       "parentUuid": "ef2bdf75_9bd1e5f0",
       "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "62d47d01_1fa87f38",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000000
+      },
+      "writtenOn": "2022-12-19T20:01:00Z",
+      "side": 1,
+      "message": "I had a feeling about the size relationship - I think we should change the sizes then.\n\nAs for `testNonPersistentMacRandomizationEvery24Hours` - I think it\u0027d be ok to rename and update it.\n\nIt\u0027ll cause a conflict with AOSP when they do update it, but that\u0027s good - we\u0027ve changed things, so that way we\u0027ll know to track their changes.",
+      "parentUuid": "318566c9_0e1e217c",
+      "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
