@@ -105,6 +105,24 @@
       "parentUuid": "318566c9_0e1e217c",
       "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "7f706431_e67920ce",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000062
+      },
+      "writtenOn": "2022-12-19T20:48:59Z",
+      "side": 1,
+      "message": "Done, but let me know if the new refresh times sound okay.",
+      "parentUuid": "62d47d01_1fa87f38",
+      "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }

@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "2eb14495_888cd265",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000062
+      },
+      "writtenOn": "2022-12-19T20:48:59Z",
+      "side": 1,
+      "message": "Not tested on-device but `atest WifiConfigManagerTest` passes.",
+      "revId": "ba5bad8f934186e3fb00fddf8f3c554218c9f399",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
