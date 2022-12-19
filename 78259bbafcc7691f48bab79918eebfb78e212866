@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "8ed38d67_24ca2a8d",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000062
+      },
+      "writtenOn": "2022-12-19T15:03:21Z",
+      "side": 1,
+      "message": "One example of a scenario to consider here (not making a judgment about it, myself):\n1. User has non-persistent MAC address randomization enabled (safer/safest/whatever).\n2. User is connected to flaky hotel Wi-Fi and trying to participate in a meeting.\n3. After some tweaking, everything seems to be going fine.\n4. User randomly (unrelated to this change) gets disconnected after 30 minutes or so but is automatically reconnected.\n\n* New behavior: User will have a new MAC address and need to deal with the captive portal again, delaying their re-entry to the meeting.\n* Old behavior: User will have the same MAC address and possibly not need to deal with the captive portal again, so they are able to re-join their meeting more quickly, unless their MAC address was last changed more than 24 hours ago.",
+      "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
