@@ -51,6 +51,24 @@
       "message": "Also, could you try:\n\n`atest WifiConfigManagerTest`\n\nOr specifically `testUpdateRandomizedMacExpireTime` in there, I think\n\n`atest com.android.server.wifi#testUpdateRandomizedMacExpireTime` should do",
       "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "ef2bdf75_9bd1e5f0",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000062
+      },
+      "writtenOn": "2022-12-19T19:44:48Z",
+      "side": 1,
+      "message": "It fails, unfortunately, in multiple tests:\n- `com.android.server.wifi.WifiConfigManagerTest#testRandomizedMacExpirationTimeUpdatedAtDisconnect`: not sure why yet\n- `com.android.server.wifi.WifiConfigManagerTest#testRandomizedMacIsNotUpdatedDueToTimeConstraint`: not sure why yet\n- `com.android.server.wifi.WifiConfigManagerTest#testNonPersistentMacRandomizationEvery24Hours`: an obvious failure, since it hard-codes 24 hours for the test.\n- `com.android.server.wifi.WifiConfigManagerTest#testUpdateRandomizedMacExpireTime`: looks like this might expect at least a 5000ms difference between min and max.\n\nIf I change this to 31 minutes, just to test, it only fixes `testUpdateRandomizedMacExpireTime`.",
+      "parentUuid": "f5e25e6f_82b84ce3",
+      "revId": "78259bbafcc7691f48bab79918eebfb78e212866",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
