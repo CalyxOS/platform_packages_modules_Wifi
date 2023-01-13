@@ -16,6 +16,23 @@
       "message": "Not tested on-device but `atest WifiConfigManagerTest` passes.",
       "revId": "ba5bad8f934186e3fb00fddf8f3c554218c9f399",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "57a4d59a_306335c8",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000000
+      },
+      "writtenOn": "2023-01-13T20:11:47Z",
+      "side": 1,
+      "message": "Works on device.\n\nI have this long standing bug where my phone won\u0027t \"save\" any network so it won\u0027t show as save networks, but I can verify that this works just based on DHCP handing out IPs\n\nBefore, toggle off:\n* Same IP handed out if reconnected (even if forgotten) within DHCP server timeout\n\nBefore, toggle off:\n* No change, due to the 24th timeout\n\nAfter, toggle on:\n* Same IP handled out if reconnected (even if forgotten) within 30 minutes.\n  This IP was different from the one above, however.\n* Different IP (signifying mac change) after that time.",
+      "revId": "ba5bad8f934186e3fb00fddf8f3c554218c9f399",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
