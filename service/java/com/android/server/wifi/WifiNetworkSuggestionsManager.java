@@ -1326,7 +1326,7 @@ public class WifiNetworkSuggestionsManager {
             removeFromPassPointInfoMap(ewns);
         } else {
             if (ewns.wns.wifiConfiguration.isEnterprise()) {
-                mWifiKeyStore.removeKeys(ewns.wns.wifiConfiguration.enterpriseConfig, false);
+                mWifiKeyStore.removeKeys(ewns.wns.wifiConfiguration.enterpriseConfig);
             }
             removeFromScanResultMatchInfoMapAndRemoveRelatedScoreCard(ewns, true);
             mWifiConfigManager.removeConnectChoiceFromAllNetworks(ewns
