@@ -545,9 +545,6 @@ public class WifiServiceImpl extends BaseWifiService {
             if (!mWifiConfigManager.loadFromStore()) {
                 Log.e(TAG, "Failed to load from config store");
             }
-            if (!mWifiGlobals.isInsecureEnterpriseConfigurationAllowed()) {
-                mWifiConfigManager.updateTrustOnFirstUseFlag(isTrustOnFirstUseSupported());
-            }
             mWifiConfigManager.incrementNumRebootsSinceLastUse();
             // config store is read, check if verbose logging is enabled.
             enableVerboseLoggingInternal(
@@ -828,6 +825,10 @@ public class WifiServiceImpl extends BaseWifiService {
                     }
             );
             mIsBootComplete = true;
+            // HW capabilities is ready after boot completion.
+            if (!mWifiGlobals.isInsecureEnterpriseConfigurationAllowed()) {
+                mWifiConfigManager.updateTrustOnFirstUseFlag(isTrustOnFirstUseSupported());
+            }
         });
     }
 
