@@ -315,41 +315,38 @@ public class WifiKeyStore {
         if (config.isSecurityType(WifiConfiguration.SECURITY_TYPE_EAP_WPA3_ENTERPRISE_192_BIT)) {
             // Read the CA certificates, and initialize
             String[] caAliases = config.enterpriseConfig.getCaCertificateAliases();
-            int caCertType = -1;
 
-            // In TOFU mode, configure the security mode based on the user certificate only.
-            if (!config.enterpriseConfig.isTrustOnFirstUseEnabled()) {
-                if (caAliases == null || caAliases.length == 0) {
-                    Log.e(TAG, "No CA aliases in profile");
+            if (caAliases == null || caAliases.length == 0) {
+                Log.e(TAG, "No CA aliases in profile");
+                return false;
+            }
+
+            int caCertType = -1;
+            int prevCaCertType = -1;
+            for (String caAlias : caAliases) {
+                Certificate caCert = null;
+                try {
+                    caCert = mKeyStore.getCertificate(caAlias);
+                } catch (KeyStoreException e) {
+                    Log.e(TAG, "Failed to get Suite-B certificate", e);
+                }
+                if (caCert == null || !(caCert instanceof X509Certificate)) {
+                    Log.e(TAG, "Failed reading CA certificate for Suite-B");
                     return false;
                 }
 
-                int prevCaCertType = -1;
-                for (String caAlias : caAliases) {
-                    Certificate caCert = null;
-                    try {
-                        caCert = mKeyStore.getCertificate(caAlias);
-                    } catch (KeyStoreException e) {
-                        Log.e(TAG, "Failed to get Suite-B certificate", e);
-                    }
-                    if (caCert == null || !(caCert instanceof X509Certificate)) {
-                        Log.e(TAG, "Failed reading CA certificate for Suite-B");
-                        return false;
-                    }
-
-                    // Confirm that the CA certificate is compatible with Suite-B requirements
-                    caCertType = getSuiteBCipherFromCert((X509Certificate) caCert);
-                    if (caCertType < 0) {
-                        return false;
-                    }
-                    if (prevCaCertType != -1) {
-                        if (prevCaCertType != caCertType) {
-                            Log.e(TAG, "Incompatible CA certificates");
-                            return false;
-                        }
-                    }
-                    prevCaCertType = caCertType;
+                // Confirm that the CA certificate is compatible with Suite-B requirements
+                caCertType = getSuiteBCipherFromCert((X509Certificate) caCert);
+                if (caCertType < 0) {
+                    return false;
                 }
+                if (prevCaCertType != -1) {
+                    if (prevCaCertType != caCertType) {
+                        Log.e(TAG, "Incompatible CA certificates");
+                        return false;
+                    }
+                }
+                prevCaCertType = caCertType;
             }
 
             Certificate clientCert = null;
@@ -369,8 +366,7 @@ public class WifiKeyStore {
                 return false;
             }
 
-            if (clientCertType == caCertType
-                    || config.enterpriseConfig.isTrustOnFirstUseEnabled()) {
+            if (clientCertType == caCertType) {
                 config.enableSuiteBCiphers(
                         clientCertType == WifiConfiguration.SuiteBCipher.ECDHE_ECDSA,
                         clientCertType == WifiConfiguration.SuiteBCipher.ECDHE_RSA);
