@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "b4b4b7b4_0365aabb",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 2
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000062
+      },
+      "writtenOn": "2023-09-27T18:16:01Z",
+      "side": 1,
+      "message": "Note that this is merged in mainline Wifi, true as of aml_wif_331910020 (likely much earlier)",
+      "revId": "05116e3dae0490d2d7adc04f3568eda53685e409",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
