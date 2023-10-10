@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "d9e1683a_574f89bf",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000000
+      },
+      "writtenOn": "2023-10-10T18:08:31Z",
+      "side": 1,
+      "message": "30 second timeout works.",
+      "revId": "4dc3b6f84c05fff8eea00a4bc9d4425459a4fbd5",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "8938d645_6f460d6d",
+        "filename": "service/java/com/android/server/wifi/WifiServiceImpl.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 911,
+      "author": {
+        "id": 1000000
+      },
+      "writtenOn": "2023-10-10T18:08:31Z",
+      "side": 1,
+      "message": "Still needs to be adapted, but doesn\u0027t have to be a blocker.",
+      "revId": "4dc3b6f84c05fff8eea00a4bc9d4425459a4fbd5",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
