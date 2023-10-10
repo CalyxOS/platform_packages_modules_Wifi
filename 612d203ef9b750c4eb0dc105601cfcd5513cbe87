@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "c7ae88b5_a29f2b50",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 2
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000000
+      },
+      "writtenOn": "2023-10-10T19:12:55Z",
+      "side": 1,
+      "message": "`atest WifiConfigManagerTest` passes, and manual verification of desired behavior works.",
+      "revId": "612d203ef9b750c4eb0dc105601cfcd5513cbe87",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
