@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "d780f711_5b6cdc2d",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000000
+      },
+      "writtenOn": "2023-10-14T15:44:50Z",
+      "side": 1,
+      "message": "Will ship after first build",
+      "revId": "058e54f38849b34f6483c8899b797978ca276246",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
