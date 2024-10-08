@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "1f88084d_7aeacdc8",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000062
+      },
+      "writtenOn": "2024-10-08T15:45:12Z",
+      "side": 1,
+      "message": "Wi-Fi is working. I did not test the specific fix, but I\u0027m calling it good enough to say \"Works\".",
+      "revId": "6dbf921cc1bdc8e73b63ce365f0b00867df45ba4",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
