@@ -18,6 +18,7 @@ package com.android.server.wifi;
 
 import static android.net.wifi.WifiManager.STATUS_LOCAL_ONLY_CONNECTION_FAILURE_AUTHENTICATION;
 import static android.net.wifi.WifiManager.STATUS_LOCAL_ONLY_CONNECTION_FAILURE_IP_PROVISIONING;
+import static android.net.wifi.WifiManager.STATUS_LOCAL_ONLY_CONNECTION_FAILURE_USER_REJECT;
 
 import static com.android.dx.mockito.inline.extended.ExtendedMockito.mockitoSession;
 import static com.android.server.wifi.WifiNetworkFactory.PERIODIC_SCAN_INTERVAL_MS;
@@ -105,6 +106,7 @@ import com.android.server.wifi.proto.nano.WifiMetricsProto;
 import com.android.server.wifi.util.ActionListenerWrapper;
 import com.android.server.wifi.util.WifiConfigStoreEncryptionUtil;
 import com.android.server.wifi.util.WifiPermissionsUtil;
+import com.android.wifi.flags.FeatureFlags;
 import com.android.wifi.resources.R;
 
 import org.junit.After;
@@ -154,6 +156,7 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
     private static final String TEST_BSSID_1_2_OUI = "12:34:23:00:00:00";
     private static final String TEST_BSSID_OUI_MASK = "ff:ff:ff:00:00:00";
     private static final String TEST_WPA_PRESHARED_KEY = "\"password123\"";
+    private static final int TEST_PREFERRED_CHANNEL_FREQ = 5260;
 
     @Mock WifiContext mContext;
     @Mock Resources mResources;
@@ -187,6 +190,8 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
     private @Mock ClientModeManager mPrimaryClientModeManager;
     private @Mock WifiGlobals mWifiGlobals;
     @Mock WifiDeviceStateChangeManager mWifiDeviceStateChangeManager;
+    @Mock FeatureFlags mFeatureFlags;
+    @Mock DeviceConfigFacade mDeviceConfigFacade;
     private MockitoSession mStaticMockSession = null;
     NetworkCapabilities mNetworkCapabilities;
     TestLooper mLooper;
@@ -264,11 +269,13 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
         when(mPackageManager.getApplicationLabel(any())).thenReturn(TEST_APP_NAME);
         mockPackageImportance(TEST_PACKAGE_NAME_1, true, false);
         mockPackageImportance(TEST_PACKAGE_NAME_2, true, false);
+        when(mDeviceConfigFacade.getFeatureFlags()).thenReturn(mFeatureFlags);
         when(mWifiInjector.getWifiScanner()).thenReturn(mWifiScanner);
         when(mWifiInjector.getActiveModeWarden()).thenReturn(mActiveModeWarden);
         when(mWifiInjector.getWifiGlobals()).thenReturn(mWifiGlobals);
         when(mWifiInjector.getWifiDeviceStateChangeManager())
                 .thenReturn(mWifiDeviceStateChangeManager);
+        when(mWifiInjector.getDeviceConfigFacade()).thenReturn(mDeviceConfigFacade);
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
         when(mWifiGlobals.isOweUpgradeEnabled()).thenReturn(true);
         when(mWifiConfigManager.addOrUpdateNetwork(any(), anyInt(), anyString(), eq(false)))
@@ -712,7 +719,8 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
      */
     @Test
     public void testHandleNetworkRequestWithSpecifier() {
-        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, false, new int[0], false);
+        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, false,
+                new int[]{TEST_PREFERRED_CHANNEL_FREQ}, false);
         mWifiNetworkFactory.needNetworkFor(mNetworkRequest);
 
         // Verify UI start.
@@ -721,7 +729,7 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
         // Verify scan settings.
         verify(mWifiScanner).startScan(mScanSettingsArgumentCaptor.capture(), any(), any(),
                 mWorkSourceArgumentCaptor.capture());
-        validateScanSettings(null, new int[0]);
+        validateScanSettings(null, new int[]{TEST_PREFERRED_CHANNEL_FREQ});
 
         verify(mWifiMetrics).incrementNetworkRequestApiNumRequest();
     }
@@ -764,7 +772,8 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
      */
     @Test
     public void testHandleNetworkRequestWithSpecifierForHiddenNetwork() {
-        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, true, new int[0], false);
+        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, true,
+                new int[]{TEST_PREFERRED_CHANNEL_FREQ}, false);
         mWifiNetworkFactory.needNetworkFor(mNetworkRequest);
 
         // Verify UI start.
@@ -775,7 +784,7 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
                 mWorkSourceArgumentCaptor.capture());
         validateScanSettings(
                 ((WifiNetworkSpecifier) mNetworkCapabilities.getNetworkSpecifier())
-                        .ssidPatternMatcher.getPath(), new int[0]);
+                        .ssidPatternMatcher.getPath(), new int[]{TEST_PREFERRED_CHANNEL_FREQ});
 
         verify(mWifiMetrics).incrementNetworkRequestApiNumRequest();
     }
@@ -789,25 +798,27 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
     @Test
     public void testHandleNetworkRequestWithSpecifierAfterPreviousHiddenNetworkRequest() {
         // Hidden request 1.
-        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, true, new int[0], false);
+        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, true,
+                new int[]{TEST_PREFERRED_CHANNEL_FREQ}, false);
         mWifiNetworkFactory.needNetworkFor(mNetworkRequest);
         // Verify scan settings.
         verify(mWifiScanner, times(1)).startScan(mScanSettingsArgumentCaptor.capture(), any(),
                 any(), mWorkSourceArgumentCaptor.capture());
         validateScanSettings(
                 ((WifiNetworkSpecifier) mNetworkCapabilities.getNetworkSpecifier())
-                        .ssidPatternMatcher.getPath(), new int[0]);
+                        .ssidPatternMatcher.getPath(), new int[]{TEST_PREFERRED_CHANNEL_FREQ});
 
         // Release request 1.
         mWifiNetworkFactory.releaseNetworkFor(mNetworkRequest);
 
         // Regular request 2.
-        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, false, new int[0], false);
+        attachDefaultWifiNetworkSpecifierAndAppInfo(TEST_UID_1, false,
+                new int[]{TEST_PREFERRED_CHANNEL_FREQ}, false);
         mWifiNetworkFactory.needNetworkFor(mNetworkRequest);
         // Verify scan settings.
         verify(mWifiScanner, times(2)).startScan(mScanSettingsArgumentCaptor.capture(), any(),
                 any(), mWorkSourceArgumentCaptor.capture());
-        validateScanSettings(null, new int[0]);
+        validateScanSettings(null, new int[]{TEST_PREFERRED_CHANNEL_FREQ});
 
         verify(mWifiMetrics, times(2)).incrementNetworkRequestApiNumRequest();
     }
@@ -1682,8 +1693,10 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
      */
     @Test
     public void testNetworkSpecifierHandleUserSelectionReject() throws Exception {
+        when(mFeatureFlags.localOnlyConnectionOptimization()).thenReturn(true);
         sendNetworkRequestAndSetupForUserSelection();
-
+        mWifiNetworkFactory.addLocalOnlyConnectionStatusListener(mLocalOnlyConnectionStatusListener,
+                TEST_PACKAGE_NAME_1, null);
         INetworkRequestUserSelectionCallback networkRequestUserSelectionCallback =
                 mNetworkRequestUserSelectionCallback.getValue();
         assertNotNull(networkRequestUserSelectionCallback);
@@ -1698,6 +1711,9 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
         verify(mConnectivityManager).declareNetworkRequestUnfulfillable(eq(mNetworkRequest));
 
         verify(mWifiMetrics).incrementNetworkRequestApiNumUserReject();
+        verify(mLocalOnlyConnectionStatusListener).onConnectionStatus(
+                eq((WifiNetworkSpecifier) mNetworkRequest.getNetworkSpecifier()),
+                eq(STATUS_LOCAL_ONLY_CONNECTION_FAILURE_USER_REJECT));
 
         // Verify we did not attempt to trigger a connection.
         verifyNoMoreInteractions(mClientModeManager, mWifiConfigManager);
@@ -4047,7 +4063,7 @@ public class WifiNetworkFactoryTest extends WifiBaseTest {
     private void validateScanSettings(@Nullable String hiddenSsid, int[] channels) {
         ScanSettings scanSettings = mScanSettingsArgumentCaptor.getValue();
         assertNotNull(scanSettings);
-        assertEquals(WifiScanner.WIFI_BAND_ALL, scanSettings.band);
+        assertEquals(WifiScanner.WIFI_BAND_UNSPECIFIED, scanSettings.band);
         assertEquals(WifiScanner.SCAN_TYPE_HIGH_ACCURACY, scanSettings.type);
         assertEquals(WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN, scanSettings.reportEvents);
         if (hiddenSsid == null) {

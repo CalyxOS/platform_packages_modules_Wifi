@@ -26,6 +26,9 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_WAPI;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SAE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SUITE_B;
 
+import static com.android.server.wifi.util.GeneralUtil.getCapabilityIndex;
+import static com.android.server.wifi.util.GeneralUtil.longToBitset;
+
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -107,6 +110,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -136,6 +140,7 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
     private static final long PMK_CACHE_EXPIRATION_IN_SEC = 1024;
     private static final byte[] CONNECTED_MAC_ADDRESS_BYTES =
             {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
+    private static final long TIME_START_MS = 0L;
 
     private @Mock IServiceManager mServiceManagerMock;
     private @Mock ISupplicant mISupplicantMock;
@@ -312,6 +317,7 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                     ssids.add(TRANSLATED_SUPPLICANT_SSID);
                     return ssids;
                 });
+        when(mClock.getElapsedSinceBootMillis()).thenReturn(TIME_START_MS);
         mDut = new SupplicantStaIfaceHalSpy();
     }
 
@@ -1638,6 +1644,9 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
     public void testIeDiffers() throws Exception {
         executeAndValidateInitializationSequence();
         assertNotNull(mISupplicantStaIfaceCallback);
+        executeAndValidateConnectSequenceWithKeyMgmt(
+                SUPPLICANT_NETWORK_ID, false, TRANSLATED_SUPPLICANT_SSID.toString(),
+                WifiConfiguration.SECURITY_TYPE_PSK, null, false);
 
         int reasonCode = ISupplicantStaIfaceCallback.ReasonCode.IE_IN_4WAY_DIFFERS;
 
@@ -1662,6 +1671,9 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
     public void testApBusy() throws Exception {
         executeAndValidateInitializationSequence();
         assertNotNull(mISupplicantStaIfaceCallback);
+        executeAndValidateConnectSequenceWithKeyMgmt(
+                SUPPLICANT_NETWORK_ID, false, TRANSLATED_SUPPLICANT_SSID.toString(),
+                WifiConfiguration.SECURITY_TYPE_PSK, null, false);
 
         int reasonCode = ISupplicantStaIfaceCallback.ReasonCode.DISASSOC_AP_BUSY;
 
@@ -1671,7 +1683,7 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 SUPPLICANT_NETWORK_ID,
                 NativeUtil.decodeSsid(SUPPLICANT_SSID));
         mISupplicantStaIfaceCallback.onDisconnected(
-                NativeUtil.macAddressToByteArray(BSSID), true, reasonCode);
+                NativeUtil.macAddressToByteArray(BSSID), false, reasonCode);
         verify(mWifiMonitor, never()).broadcastAuthenticationFailureEvent(any(), anyInt(),
                 anyInt(), any(), any());
     }
@@ -2179,7 +2191,7 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
     }
 
     /**
-     * Test get advanced capabilities API on old HAL, should return 0 (not supported)
+     * Test get advanced capabilities API on old HAL, should return an empty BitSet (not supported)
      */
     @Test
     public void testGetKeyMgmtCapabilitiesOldHal() throws Exception {
@@ -2187,7 +2199,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
 
         executeAndValidateInitializationSequenceV1_1(false, false);
 
-        assertTrue(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME) == 0);
+        assertTrue(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME).equals(new BitSet()));
+
     }
 
     /**
@@ -2205,7 +2218,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_2.ISupplicantStaIface
                         .getKeyMgmtCapabilitiesCallback.class));
 
-        assertEquals(WIFI_FEATURE_WPA3_SAE, mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_WPA3_SAE)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2223,8 +2237,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_2.ISupplicantStaIface
                         .getKeyMgmtCapabilitiesCallback.class));
 
-        assertEquals(WIFI_FEATURE_WPA3_SUITE_B,
-                mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_WPA3_SUITE_B)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2242,7 +2256,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_2.ISupplicantStaIface
                         .getKeyMgmtCapabilitiesCallback.class));
 
-        assertEquals(WIFI_FEATURE_OWE, mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_OWE)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2261,8 +2276,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_2.ISupplicantStaIface
                         .getKeyMgmtCapabilitiesCallback.class));
 
-        assertEquals(WIFI_FEATURE_OWE | WIFI_FEATURE_WPA3_SAE,
-                mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_OWE | WIFI_FEATURE_WPA3_SAE)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2280,7 +2295,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_2.ISupplicantStaIface
                         .getKeyMgmtCapabilitiesCallback.class));
 
-        assertEquals(WIFI_FEATURE_DPP, mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_DPP)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2297,9 +2313,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_3.ISupplicantStaIface
                         .getKeyMgmtCapabilities_1_3Callback.class));
 
-        assertTrue((WIFI_FEATURE_DPP_ENROLLEE_RESPONDER
-                & mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME))
-                == WIFI_FEATURE_DPP_ENROLLEE_RESPONDER);
+        assertTrue(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)
+                .get(getCapabilityIndex(WIFI_FEATURE_DPP_ENROLLEE_RESPONDER)));
     }
 
     /**
@@ -2317,9 +2332,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_3.ISupplicantStaIface
                         .getKeyMgmtCapabilities_1_3Callback.class));
 
-        assertFalse((WIFI_FEATURE_DPP_ENROLLEE_RESPONDER
-                & mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME))
-                == WIFI_FEATURE_DPP_ENROLLEE_RESPONDER);
+        assertFalse(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)
+                .get(getCapabilityIndex(WIFI_FEATURE_DPP_ENROLLEE_RESPONDER)));
     }
 
     /**
@@ -2337,7 +2351,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_3.ISupplicantStaIface
                         .getKeyMgmtCapabilities_1_3Callback.class));
 
-        assertEquals(WIFI_FEATURE_WAPI, mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_WAPI)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2355,8 +2370,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_3.ISupplicantStaIface
                         .getKeyMgmtCapabilities_1_3Callback.class));
 
-        assertEquals(WIFI_FEATURE_FILS_SHA256,
-                mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_FILS_SHA256)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2374,8 +2389,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_3.ISupplicantStaIface
                         .getKeyMgmtCapabilities_1_3Callback.class));
 
-        assertEquals(WIFI_FEATURE_FILS_SHA384,
-                mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_FILS_SHA384)
+                .equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -3506,15 +3521,15 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
 
     /**
      * Test To get wpa driver capabilities API on old HAL, should
-     * return 0 (not supported)
+     * return an empty BitSet (not supported)
      */
     @Test
-    public void tetGetWpaDriverCapabilitiesOldHal() throws Exception {
+    public void testGetWpaDriverCapabilitiesOldHal() throws Exception {
         setupMocksForHalV1_2();
 
         executeAndValidateInitializationSequenceV1_2();
 
-        assertEquals(0, mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME));
+        assertTrue(mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME).equals(new BitSet()));
     }
 
     /**
@@ -3532,7 +3547,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_3.ISupplicantStaIface
                         .getWpaDriverCapabilitiesCallback.class));
 
-        assertEquals(WIFI_FEATURE_MBO, mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_MBO)
+                .equals(mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -3552,8 +3568,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_3.ISupplicantStaIface
                         .getWpaDriverCapabilitiesCallback.class));
 
-        assertEquals(WIFI_FEATURE_MBO | WIFI_FEATURE_OCE,
-                mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_MBO | WIFI_FEATURE_OCE)
+                .equals(mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -3573,8 +3589,8 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 android.hardware.wifi.supplicant.V1_4.ISupplicantStaIface
                         .getWpaDriverCapabilities_1_4Callback.class));
 
-        assertEquals(WIFI_FEATURE_MBO | WIFI_FEATURE_OCE,
-                mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_MBO | WIFI_FEATURE_OCE)
+                .equals(mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -3751,6 +3767,9 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
         setupMocksForHalV1_3();
         executeAndValidateInitializationSequenceV1_3();
         assertNotNull(mISupplicantStaIfaceCallbackV13);
+        executeAndValidateConnectSequenceWithKeyMgmt(
+                SUPPLICANT_NETWORK_ID, false, TRANSLATED_SUPPLICANT_SSID.toString(),
+                WifiConfiguration.SECURITY_TYPE_PSK, null, false);
 
         int reasonCode = ISupplicantStaIfaceCallback.ReasonCode.IE_IN_4WAY_DIFFERS;
 
@@ -3852,8 +3871,16 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
         setupMocksForHalV1_4();
         executeAndValidateInitializationSequenceV1_4();
         assertNotNull(mISupplicantStaIfaceCallbackV14);
-        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
 
+        // Do not broadcast NETWORK_NOT_FOUND for the specified duration.
+        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
+        verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
+                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
+
+        // NETWORK_NOT_FOUND should be broadcasted after the duration.
+        when(mClock.getElapsedSinceBootMillis()).thenReturn(TIME_START_MS
+                + SupplicantStaIfaceHalHidlImpl.IGNORE_NETWORK_NOT_FOUND_DURATION_MS + 1);
+        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
         verify(mWifiMonitor).broadcastNetworkNotFoundEvent(
                 eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
     }
@@ -3877,26 +3904,72 @@ public class SupplicantStaIfaceHalHidlImplTest extends WifiBaseTest {
                 });
         executeAndValidateConnectSequence(SUPPLICANT_NETWORK_ID, false,
                 TRANSLATED_SUPPLICANT_SSID.toString());
-        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
 
-        // Validate that we initiated another connect sequence to the fallback SUPPLICANT_SSID.
+        // SSID was not found, but don't broadcast NETWORK_NOT_FOUND since we're still in
+        // the ignore duration.
+        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
+        verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
+                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
+        validateConnectSequence(false, 1, TRANSLATED_SUPPLICANT_SSID.toString());
+
+        // Receive NETWORK_NOT_FOUND after the ignore duration. This should trigger a connection
+        // to the fallback without broadcasting NETWORK_NOT_FOUND yet.
+        long time = TIME_START_MS
+                + SupplicantStaIfaceHalHidlImpl.IGNORE_NETWORK_NOT_FOUND_DURATION_MS;
+        when(mClock.getElapsedSinceBootMillis()).thenReturn(time);
+        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(
+                TRANSLATED_SUPPLICANT_SSID.toString()));
         verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
                 eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
         validateConnectSequence(false, 2, SUPPLICANT_SSID);
 
-        // Fallback SSID was not found, finally broadcast NETWORK_NOT_FOUND and try the first SSID
-        // again.
+        // Fallback SSID was not found, but don't broadcast NETWORK_NOT_FOUND because we're in the
+        // ignore duration for the fallback connection.
+        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
+        verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
+                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
+        validateConnectSequence(false, 2, SUPPLICANT_SSID);
+
+        // Receive NETWORK_NOT_FOUND after the new ignore duration. This should trigger a connection
+        // to the first SSID and finally broadcast the NETWORK_NOT_FOUND.
+        time += SupplicantStaIfaceHalHidlImpl.IGNORE_NETWORK_NOT_FOUND_DURATION_MS;
+        when(mClock.getElapsedSinceBootMillis()).thenReturn(time);
         mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
         verify(mWifiMonitor).broadcastNetworkNotFoundEvent(
                 eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
         validateConnectSequence(false, 3, TRANSLATED_SUPPLICANT_SSID.toString());
+    }
 
-        // First SSID not found, try the fallback without broadcasting NETWORK_NOT_FOUND.
-        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(
-                TRANSLATED_SUPPLICANT_SSID.toString()));
-        verify(mWifiMonitor, times(1)).broadcastNetworkNotFoundEvent(
-                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
-        validateConnectSequence(false, 4, SUPPLICANT_SSID);
+    /**
+     * Tests that network not found notification won't trigger connecting to the fallback SSIDs if
+     * the network has been disabled.
+     */
+    @Test
+    public void testNetworkNotFoundCallbackDoesNotConnectToFallbackAfterDisabled()
+            throws Exception {
+        when(mSupplicantStaNetworkMock.disable()).thenReturn(true);
+        setupMocksForHalV1_4();
+        executeAndValidateInitializationSequenceV1_4();
+        assertNotNull(mISupplicantStaIfaceCallbackV14);
+        // Setup mocks to return two possible original SSIDs. We will pick
+        // TRANSLATED_SUPPLICANT_SSID as the first SSID to try.
+        when(mSsidTranslator.getAllPossibleOriginalSsids(TRANSLATED_SUPPLICANT_SSID)).thenAnswer(
+                (Answer<List<WifiSsid>>) invocation -> {
+                    List<WifiSsid> ssids = new ArrayList<>();
+                    ssids.add(TRANSLATED_SUPPLICANT_SSID);
+                    ssids.add(WifiSsid.fromString(SUPPLICANT_SSID));
+                    return ssids;
+                });
+        executeAndValidateConnectSequence(SUPPLICANT_NETWORK_ID, false,
+                TRANSLATED_SUPPLICANT_SSID.toString());
+
+        // Disable the current network and issue a NETWORK_NOT_FOUND
+        assertTrue(mDut.disableCurrentNetwork(WLAN0_IFACE_NAME));
+        verify(mSupplicantStaNetworkMock).disable();
+        mISupplicantStaIfaceCallbackV14.onNetworkNotFound(NativeUtil.decodeSsid(SUPPLICANT_SSID));
+
+        // Validate that we don't initiate another connect sequence.
+        validateConnectSequence(false, 1, TRANSLATED_SUPPLICANT_SSID.toString());
     }
 
     /**

@@ -24,9 +24,14 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_MBO;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_OCE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_OWE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS;
+import static android.net.wifi.WifiManager.WIFI_FEATURE_TRUST_ON_FIRST_USE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WAPI;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SAE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SUITE_B;
+import static android.os.Build.VERSION.SDK_INT;
+
+import static com.android.server.wifi.util.GeneralUtil.getCapabilityIndex;
+import static com.android.server.wifi.util.GeneralUtil.longToBitset;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -52,9 +57,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.validateMockitoUsage;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -114,7 +121,9 @@ import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiManager;
+import android.net.wifi.WifiMigration;
 import android.net.wifi.WifiSsid;
+import android.net.wifi.flags.Flags;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
@@ -124,6 +133,7 @@ import android.text.TextUtils;
 
 import androidx.test.filters.SmallTest;
 
+import com.android.dx.mockito.inline.extended.ExtendedMockito;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.MboOceController.BtmFrameData;
 import com.android.server.wifi.hal.HalTestUtils;
@@ -132,6 +142,7 @@ import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.WnmData;
 import com.android.server.wifi.util.NativeUtil;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -139,6 +150,7 @@ import org.mockito.Captor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.mockito.MockitoSession;
 import org.mockito.stubbing.Answer;
 
 import java.net.InetAddress;
@@ -178,6 +190,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     private static final String HS20_URL = "http://blahblah";
     private static final long PMK_CACHE_EXPIRATION_IN_SEC = 1024;
     private static final byte[] CONNECTED_MAC_ADDRESS_BYTES = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
+    private static final long TIME_START_MS = 0L;
 
     private @Mock ISupplicant mISupplicantMock;
     private @Mock IBinder mServiceBinderMock;
@@ -200,6 +213,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     IfaceInfo[] mIfaceInfoList;
     ISupplicantStaIfaceCallback mISupplicantStaIfaceCallback;
 
+    private MockitoSession mSession;
     private TestLooper mLooper = new TestLooper();
     private Handler mHandler = null;
     private SupplicantStaIfaceHalSpy mDut;
@@ -244,6 +258,11 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     @Before
     public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
+        // Mock WifiMigration to avoid calling into its static methods
+        mSession = ExtendedMockito.mockitoSession()
+                .mockStatic(Flags.class, withSettings().lenient())
+                .mockStatic(WifiMigration.class, withSettings().lenient())
+                .startMocking();
         mIfaceInfoList = new IfaceInfo[3];
         mIfaceInfoList[0] = createIfaceInfo(IfaceType.STA, WLAN0_IFACE_NAME);
         mIfaceInfoList[1] = createIfaceInfo(IfaceType.STA, WLAN1_IFACE_NAME);
@@ -263,7 +282,16 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
                     return ssids;
                 });
         when(mWifiInjector.getSettingsConfigStore()).thenReturn(mWifiSettingsConfigStore);
+        when(Flags.legacyKeystoreToWifiBlobstoreMigrationReadOnly()).thenReturn(true);
         mDut = new SupplicantStaIfaceHalSpy();
+    }
+
+    @After
+    public void cleanup() {
+        validateMockitoUsage();
+        if (mSession != null) {
+            mSession.finishMocking();
+        }
     }
 
     /**
@@ -1409,6 +1437,9 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     public void testIeDiffers() throws Exception {
         executeAndValidateInitializationSequence();
         assertNotNull(mISupplicantStaIfaceCallback);
+        executeAndValidateConnectSequenceWithKeyMgmt(
+                SUPPLICANT_NETWORK_ID, false, TRANSLATED_SUPPLICANT_SSID.toString(),
+                WifiConfiguration.SECURITY_TYPE_PSK, null, false);
 
         int reasonCode = StaIfaceReasonCode.IE_IN_4WAY_DIFFERS;
 
@@ -1433,6 +1464,9 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     public void testApBusy() throws Exception {
         executeAndValidateInitializationSequence();
         assertNotNull(mISupplicantStaIfaceCallback);
+        executeAndValidateConnectSequenceWithKeyMgmt(
+                SUPPLICANT_NETWORK_ID, false, TRANSLATED_SUPPLICANT_SSID.toString(),
+                WifiConfiguration.SECURITY_TYPE_PSK, null, false);
 
         int reasonCode = StaIfaceReasonCode.DISASSOC_AP_BUSY;
 
@@ -1442,7 +1476,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
                 SUPPLICANT_NETWORK_ID,
                 NativeUtil.byteArrayFromArrayList(NativeUtil.decodeSsid(SUPPLICANT_SSID)), false);
         mISupplicantStaIfaceCallback.onDisconnected(
-                NativeUtil.macAddressToByteArray(BSSID), true, reasonCode);
+                NativeUtil.macAddressToByteArray(BSSID), false, reasonCode);
         verify(mWifiMonitor, never()).broadcastAuthenticationFailureEvent(any(), anyInt(),
                 anyInt(), any(), any());
     }
@@ -1798,12 +1832,12 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     /**
      * Helper function for tests involving getAdvancedCapabilities.
      */
-    private void checkKeyMgmtCapabilities(int serviceCapabilities, long expectedCapabilities)
+    private void checkKeyMgmtCapabilities(int serviceCapabilities, BitSet expectedCapabilities)
             throws Exception {
         executeAndValidateInitializationSequence();
         doReturn(serviceCapabilities).when(mISupplicantStaIfaceMock).getKeyMgmtCapabilities();
         expectedCapabilities = addDefaultKeyMgmtCap(expectedCapabilities);
-        assertEquals(expectedCapabilities, mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME));
+        assertTrue(expectedCapabilities.equals(mDut.getAdvancedCapabilities(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -1811,7 +1845,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetKeyMgmtCapabilitiesWpa3Sae() throws Exception {
-        checkKeyMgmtCapabilities(KeyMgmtMask.SAE, WIFI_FEATURE_WPA3_SAE);
+        checkKeyMgmtCapabilities(KeyMgmtMask.SAE, longToBitset(WIFI_FEATURE_WPA3_SAE));
     }
 
     /**
@@ -1819,7 +1853,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetKeyMgmtCapabilitiesWpa3SuiteB() throws Exception {
-        checkKeyMgmtCapabilities(KeyMgmtMask.SUITE_B_192, WIFI_FEATURE_WPA3_SUITE_B);
+        checkKeyMgmtCapabilities(KeyMgmtMask.SUITE_B_192, longToBitset(WIFI_FEATURE_WPA3_SUITE_B));
     }
 
     /**
@@ -1827,7 +1861,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetKeyMgmtCapabilitiesOwe() throws Exception {
-        checkKeyMgmtCapabilities(KeyMgmtMask.OWE, WIFI_FEATURE_OWE);
+        checkKeyMgmtCapabilities(KeyMgmtMask.OWE, longToBitset(WIFI_FEATURE_OWE));
     }
 
     /**
@@ -1836,7 +1870,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     @Test
     public void testGetKeyMgmtCapabilitiesOweAndSae() throws Exception {
         checkKeyMgmtCapabilities(KeyMgmtMask.OWE | KeyMgmtMask.SAE,
-                WIFI_FEATURE_OWE | WIFI_FEATURE_WPA3_SAE);
+                longToBitset(WIFI_FEATURE_OWE | WIFI_FEATURE_WPA3_SAE));
     }
 
     /**
@@ -1844,8 +1878,8 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetKeyMgmtCapabilitiesDpp() throws Exception {
-        checkKeyMgmtCapabilities(KeyMgmtMask.DPP, WIFI_FEATURE_DPP
-                        | WIFI_FEATURE_DPP_ENROLLEE_RESPONDER);
+        checkKeyMgmtCapabilities(KeyMgmtMask.DPP,
+                longToBitset(WIFI_FEATURE_DPP | WIFI_FEATURE_DPP_ENROLLEE_RESPONDER));
     }
 
     /**
@@ -1853,7 +1887,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetKeyMgmtCapabilitiesWapi() throws Exception {
-        checkKeyMgmtCapabilities(KeyMgmtMask.WAPI_PSK, WIFI_FEATURE_WAPI);
+        checkKeyMgmtCapabilities(KeyMgmtMask.WAPI_PSK, longToBitset(WIFI_FEATURE_WAPI));
     }
 
     /**
@@ -1861,7 +1895,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetKeyMgmtCapabilitiesFilsSha256() throws Exception {
-        checkKeyMgmtCapabilities(KeyMgmtMask.FILS_SHA256, WIFI_FEATURE_FILS_SHA256);
+        checkKeyMgmtCapabilities(KeyMgmtMask.FILS_SHA256, longToBitset(WIFI_FEATURE_FILS_SHA256));
     }
 
     /**
@@ -1869,7 +1903,7 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetKeyMgmtCapabilitiesFilsSha384() throws Exception {
-        checkKeyMgmtCapabilities(KeyMgmtMask.FILS_SHA384, WIFI_FEATURE_FILS_SHA384);
+        checkKeyMgmtCapabilities(KeyMgmtMask.FILS_SHA384, longToBitset(WIFI_FEATURE_FILS_SHA384));
     }
 
     /**
@@ -2133,7 +2167,8 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence();
         doReturn(WpaDriverCapabilitiesMask.MBO).when(mISupplicantStaIfaceMock)
                 .getWpaDriverCapabilities();
-        assertEquals(WIFI_FEATURE_MBO, mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_MBO)
+                .equals(mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2144,8 +2179,8 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence();
         doReturn(WpaDriverCapabilitiesMask.MBO | WpaDriverCapabilitiesMask.OCE)
                 .when(mISupplicantStaIfaceMock).getWpaDriverCapabilities();
-        assertEquals(WIFI_FEATURE_MBO | WIFI_FEATURE_OCE,
-                mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_MBO | WIFI_FEATURE_OCE)
+                .equals(mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2156,8 +2191,8 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence();
         doReturn(WpaDriverCapabilitiesMask.TRUST_ON_FIRST_USE)
                 .when(mISupplicantStaIfaceMock).getWpaDriverCapabilities();
-        assertEquals(WifiManager.WIFI_FEATURE_TRUST_ON_FIRST_USE,
-                mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME));
+        assertTrue(longToBitset(WIFI_FEATURE_TRUST_ON_FIRST_USE)
+                .equals(mDut.getWpaDriverFeatureSet(WLAN0_IFACE_NAME)));
     }
 
     /**
@@ -2263,30 +2298,6 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     }
 
     /**
-     * Tests the handling of incorrect network passwords when
-     * onStateChanged() is used, edge case.
-     *
-     * If the disconnect reason is "IE in 4way differs", do not call it a password mismatch.
-     */
-    @Test
-    public void testIeDiffersWhenOnStateChangedIsUsed() throws Exception {
-        executeAndValidateInitializationSequence();
-        assertNotNull(mISupplicantStaIfaceCallback);
-
-        int reasonCode = StaIfaceReasonCode.IE_IN_4WAY_DIFFERS;
-
-        mISupplicantStaIfaceCallback.onStateChanged(
-                StaIfaceCallbackState.FOURWAY_HANDSHAKE,
-                NativeUtil.macAddressToByteArray(BSSID),
-                SUPPLICANT_NETWORK_ID,
-                NativeUtil.byteArrayFromArrayList(NativeUtil.decodeSsid(SUPPLICANT_SSID)), false);
-        mISupplicantStaIfaceCallback.onDisconnected(
-                NativeUtil.macAddressToByteArray(BSSID), true, reasonCode);
-        verify(mWifiMonitor, times(0)).broadcastAuthenticationFailureEvent(any(), anyInt(),
-                anyInt(), any(), any());
-    }
-
-    /**
      * Tests the handling of state change notification to
      * completed (with FILS HLP IE sent) after configuring a network.
      */
@@ -2374,6 +2385,16 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         assertNotNull(mISupplicantStaIfaceCallback);
         executeAndValidateConnectSequence(SUPPLICANT_NETWORK_ID, false,
                 TRANSLATED_SUPPLICANT_SSID.toString());
+
+        // Do not broadcast NETWORK_NOT_FOUND for the specified duration.
+        mISupplicantStaIfaceCallback.onNetworkNotFound(NativeUtil.byteArrayFromArrayList(
+                NativeUtil.decodeSsid(SUPPLICANT_SSID)));
+        verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
+                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
+
+        // NETWORK_NOT_FOUND should be broadcasted after the duration.
+        when(mClock.getElapsedSinceBootMillis()).thenReturn(TIME_START_MS
+                + SupplicantStaIfaceHalHidlImpl.IGNORE_NETWORK_NOT_FOUND_DURATION_MS + 1);
         mISupplicantStaIfaceCallback.onNetworkNotFound(NativeUtil.byteArrayFromArrayList(
                 NativeUtil.decodeSsid(SUPPLICANT_SSID)));
 
@@ -2399,28 +2420,75 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
                 });
         executeAndValidateConnectSequence(SUPPLICANT_NETWORK_ID, false,
                 TRANSLATED_SUPPLICANT_SSID.toString());
+
+        // SSID was not found, but don't broadcast NETWORK_NOT_FOUND since we're still in
+        // the ignore duration.
         mISupplicantStaIfaceCallback.onNetworkNotFound(NativeUtil.byteArrayFromArrayList(
                 NativeUtil.decodeSsid(SUPPLICANT_SSID)));
+        verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
+                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
+        validateConnectSequence(false, 1, TRANSLATED_SUPPLICANT_SSID.toString());
 
-        // Validate that we initiated another connect sequence to the fallback SUPPLICANT_SSID.
+        // Receive NETWORK_NOT_FOUND after the ignore duration. This should trigger a connection
+        // to the fallback without broadcasting NETWORK_NOT_FOUND yet.
+        long time = TIME_START_MS
+                + SupplicantStaIfaceHalHidlImpl.IGNORE_NETWORK_NOT_FOUND_DURATION_MS;
+        when(mClock.getElapsedSinceBootMillis()).thenReturn(time);
+        mISupplicantStaIfaceCallback.onNetworkNotFound(NativeUtil.byteArrayFromArrayList(
+                NativeUtil.decodeSsid(TRANSLATED_SUPPLICANT_SSID.toString())));
         verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
                 eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
         validateConnectSequence(false, 2, SUPPLICANT_SSID);
 
-        // Fallback SSID was not found, finally broadcast NETWORK_NOT_FOUND and try the first SSID
-        // again.
+        // Fallback SSID was not found, but don't broadcast NETWORK_NOT_FOUND because we're in the
+        // ignore duration for the fallback connection.
+        mISupplicantStaIfaceCallback.onNetworkNotFound(NativeUtil.byteArrayFromArrayList(
+                NativeUtil.decodeSsid(SUPPLICANT_SSID)));
+        verify(mWifiMonitor, never()).broadcastNetworkNotFoundEvent(
+                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
+        validateConnectSequence(false, 2, SUPPLICANT_SSID);
+
+        // Receive NETWORK_NOT_FOUND after the new ignore duration. This should trigger a connection
+        // to the first SSID and finally broadcast the NETWORK_NOT_FOUND.
+        time += SupplicantStaIfaceHalHidlImpl.IGNORE_NETWORK_NOT_FOUND_DURATION_MS;
+        when(mClock.getElapsedSinceBootMillis()).thenReturn(time);
         mISupplicantStaIfaceCallback.onNetworkNotFound(NativeUtil.byteArrayFromArrayList(
                 NativeUtil.decodeSsid(SUPPLICANT_SSID)));
         verify(mWifiMonitor).broadcastNetworkNotFoundEvent(
                 eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
         validateConnectSequence(false, 3, TRANSLATED_SUPPLICANT_SSID.toString());
+    }
 
-        // First SSID not found, try the fallback without broadcasting NETWORK_NOT_FOUND.
+    /**
+     * Tests that network not found notification won't trigger connecting to the fallback SSIDs if
+     * the network has been disabled.
+     */
+    @Test
+    public void testNetworkNotFoundCallbackDoesNotConnectToFallbackAfterDisabled()
+            throws Exception {
+        when(mSupplicantStaNetworkMock.disable()).thenReturn(true);
+        executeAndValidateInitializationSequence();
+        assertNotNull(mISupplicantStaIfaceCallback);
+        // Setup mocks to return two possible original SSIDs. We will pick
+        // TRANSLATED_SUPPLICANT_SSID as the first SSID to try.
+        when(mSsidTranslator.getAllPossibleOriginalSsids(TRANSLATED_SUPPLICANT_SSID)).thenAnswer(
+                (Answer<List<WifiSsid>>) invocation -> {
+                    List<WifiSsid> ssids = new ArrayList<>();
+                    ssids.add(TRANSLATED_SUPPLICANT_SSID);
+                    ssids.add(WifiSsid.fromString(SUPPLICANT_SSID));
+                    return ssids;
+                });
+        executeAndValidateConnectSequence(SUPPLICANT_NETWORK_ID, false,
+                TRANSLATED_SUPPLICANT_SSID.toString());
+
+        // Disable the current network and issue a NETWORK_NOT_FOUND
+        assertTrue(mDut.disableCurrentNetwork(WLAN0_IFACE_NAME));
+        verify(mSupplicantStaNetworkMock).disable();
         mISupplicantStaIfaceCallback.onNetworkNotFound(NativeUtil.byteArrayFromArrayList(
-                NativeUtil.decodeSsid(TRANSLATED_SUPPLICANT_SSID.toString())));
-        verify(mWifiMonitor, times(1)).broadcastNetworkNotFoundEvent(
-                eq(WLAN0_IFACE_NAME), eq(TRANSLATED_SUPPLICANT_SSID.toString()));
-        validateConnectSequence(false, 4, SUPPLICANT_SSID);
+                NativeUtil.decodeSsid(SUPPLICANT_SSID)));
+
+        // Validate that we don't initiate another connect sequence.
+        validateConnectSequence(false, 1, TRANSLATED_SUPPLICANT_SSID.toString());
     }
 
     /**
@@ -2786,9 +2854,10 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
      * Indicate support for key mgmt features supported by default in HIDL HAL V1.4,
      * i.e. the latest HIDL version before the conversion to AIDL.
      */
-    private long addDefaultKeyMgmtCap(long capabilities) {
-        return capabilities | WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS
-                | WIFI_FEATURE_DECORATED_IDENTITY;
+    private BitSet addDefaultKeyMgmtCap(BitSet capabilities) {
+        capabilities.set(getCapabilityIndex(WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS));
+        capabilities.set(getCapabilityIndex(WIFI_FEATURE_DECORATED_IDENTITY));
+        return capabilities;
     }
 
     /**
@@ -3395,5 +3464,16 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         mDut.disableMscs(WLAN0_IFACE_NAME);
         mDut.resendMscs(WLAN0_IFACE_NAME);
         verify(mISupplicantStaIfaceMock, times(2)).configureMscs(halParamsCaptor.capture());
+    }
+
+    /**
+     * Verify that the Legacy Keystore migration only occurs once during the initial setup.
+     */
+    @Test
+    public void testLegacyKeystoreMigration() throws Exception {
+        assumeTrue(SDK_INT >= 36);
+        assertFalse(mDut.mHasMigratedLegacyKeystoreAliases);
+        executeAndValidateInitializationSequence();
+        assertTrue(mDut.mHasMigratedLegacyKeystoreAliases);
     }
 }

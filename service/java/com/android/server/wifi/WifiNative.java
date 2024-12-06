@@ -21,11 +21,15 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_OWE;
 import static com.android.server.wifi.HalDeviceManager.HDM_CREATE_IFACE_AP;
 import static com.android.server.wifi.HalDeviceManager.HDM_CREATE_IFACE_AP_BRIDGE;
 import static com.android.server.wifi.HalDeviceManager.HDM_CREATE_IFACE_NAN;
-import static com.android.server.wifi.HalDeviceManager.HDM_CREATE_IFACE_STA;
 import static com.android.server.wifi.HalDeviceManager.HDM_CREATE_IFACE_P2P;
+import static com.android.server.wifi.HalDeviceManager.HDM_CREATE_IFACE_STA;
+import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_NATIVE_EXTENDED_SUPPORTED_FEATURES;
 import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_NATIVE_SUPPORTED_FEATURES;
 import static com.android.server.wifi.p2p.WifiP2pNative.P2P_IFACE_NAME;
 import static com.android.server.wifi.p2p.WifiP2pNative.P2P_INTERFACE_PROPERTY;
+import static com.android.server.wifi.util.GeneralUtil.bitsetToLong;
+import static com.android.server.wifi.util.GeneralUtil.longToBitset;
+import static com.android.wifi.flags.Flags.rsnOverriding;
 
 import android.annotation.IntDef;
 import android.annotation.NonNull;
@@ -134,12 +138,13 @@ public class WifiNative {
     private NetdWrapper mNetdWrapper;
     private boolean mVerboseLoggingEnabled = false;
     private boolean mIsEnhancedOpenSupported = false;
+    @VisibleForTesting boolean mIsRsnOverridingSupported = false;
     private final List<CoexUnsafeChannel> mCachedCoexUnsafeChannels = new ArrayList<>();
     private int mCachedCoexRestrictions;
     private CountryCodeChangeListenerInternal mCountryCodeChangeListener;
     private boolean mUseFakeScanDetails;
     private final ArrayList<ScanDetail> mFakeScanDetails = new ArrayList<>();
-    private long mCachedFeatureSet;
+    private BitSet mCachedFeatureSet = null;
     private boolean mQosPolicyFeatureEnabled = false;
     private final Map<String, String> mWifiCondIfacesForBridgedAp = new ArrayMap<>();
     private MockWifiServiceUtil mMockWifiModem = null;
@@ -1557,6 +1562,8 @@ public class WifiNative {
 
             iface.featureSet = getSupportedFeatureSetInternal(iface.name);
             updateSupportedBandForStaInternal(iface);
+            mIsRsnOverridingSupported = mContext.getResources().getBoolean(
+                    R.bool.config_wifiRsnOverridingEnabled) && rsnOverriding();
 
             mWifiVendorHal.enableStaChannelForPeerNetwork(mContext.getResources().getBoolean(
                             R.bool.config_wifiEnableStaIndoorChannelForPeerNetwork),
@@ -2090,6 +2097,7 @@ public class WifiNative {
                     ies,
                     result.getCapabilities(),
                     mIsEnhancedOpenSupported,
+                    mIsRsnOverridingSupported,
                     result.getFrequencyMhz(),
                     mUnknownAkmMap);
             String flags = capabilities.generateCapabilitiesString();
@@ -3618,6 +3626,11 @@ public class WifiNative {
          * See WifiScanner.REASON_* for possible values.
          */
         void onScanRequestFailed(int errorCode);
+
+        /**
+         * Callback for all APs ScanResult
+         */
+        void onFullScanResults(List<ScanResult> fullScanResult, int bucketsScanned);
     }
 
     /**
@@ -3936,7 +3949,7 @@ public class WifiNative {
             long featureSet = 0;
             // First get the complete feature set stored in config store when supplicant was
             // started
-            featureSet = getCompleteFeatureSetFromConfigStore();
+            featureSet = bitsetToLong(getCompleteFeatureSetFromConfigStore());
             // Include the feature set saved in interface class. This is to make sure that
             // framework is returning the feature set for SoftAp only products and multi-chip
             // products.
@@ -3973,9 +3986,10 @@ public class WifiNative {
      * @return bitmask defined by WifiManager.WIFI_FEATURE_*
      */
     private long getSupportedFeatureSetInternal(@NonNull String ifaceName) {
-        long featureSet = mSupplicantStaIfaceHal.getAdvancedCapabilities(ifaceName)
-                | mWifiVendorHal.getSupportedFeatureSet(ifaceName)
-                | mSupplicantStaIfaceHal.getWpaDriverFeatureSet(ifaceName);
+        BitSet featureBitset = mSupplicantStaIfaceHal.getAdvancedCapabilities(ifaceName);
+        featureBitset.or(mSupplicantStaIfaceHal.getWpaDriverFeatureSet(ifaceName));
+        featureBitset.or(mWifiVendorHal.getSupportedFeatureSet(ifaceName));
+        long featureSet = bitsetToLong(featureBitset);
         if (SdkLevel.isAtLeastT()) {
             if (((featureSet & WifiManager.WIFI_FEATURE_DPP) != 0)
                     && mContext.getResources().getBoolean(R.bool.config_wifiDppAkmSupported)) {
@@ -5159,12 +5173,13 @@ public class WifiNative {
      * Save the complete list of features retrieved from WiFi HAL and Supplicant HAL in
      * config store.
      */
-    private void saveCompleteFeatureSetInConfigStoreIfNecessary(long featureSet) {
-        long cachedFeatureSet = getCompleteFeatureSetFromConfigStore();
-        if (cachedFeatureSet != featureSet) {
+    private void saveCompleteFeatureSetInConfigStoreIfNecessary(long featureSetLong) {
+        BitSet featureSet = longToBitset(featureSetLong);
+        BitSet cachedFeatureSet = getCompleteFeatureSetFromConfigStore();
+        if (!cachedFeatureSet.equals(featureSet)) {
             mCachedFeatureSet = featureSet;
             mWifiInjector.getSettingsConfigStore()
-                    .put(WIFI_NATIVE_SUPPORTED_FEATURES, mCachedFeatureSet);
+                    .put(WIFI_NATIVE_EXTENDED_SUPPORTED_FEATURES, mCachedFeatureSet.toLongArray());
             Log.i(TAG, "Supported features is updated in config store: " + mCachedFeatureSet);
         }
     }
@@ -5172,10 +5187,18 @@ public class WifiNative {
     /**
      * Get the feature set from cache/config store
      */
-    private long getCompleteFeatureSetFromConfigStore() {
-        if (mCachedFeatureSet == 0) {
-            mCachedFeatureSet = mWifiInjector.getSettingsConfigStore()
-                    .get(WIFI_NATIVE_SUPPORTED_FEATURES);
+    private BitSet getCompleteFeatureSetFromConfigStore() {
+        if (mCachedFeatureSet == null) {
+            long[] extendedFeatures = mWifiInjector.getSettingsConfigStore()
+                    .get(WIFI_NATIVE_EXTENDED_SUPPORTED_FEATURES);
+            if (extendedFeatures == null || extendedFeatures.length == 0) {
+                // Retrieve the legacy feature set if the extended features are not available
+                long legacyFeatures =  mWifiInjector.getSettingsConfigStore()
+                        .get(WIFI_NATIVE_SUPPORTED_FEATURES);
+                mCachedFeatureSet = longToBitset(legacyFeatures);
+            } else {
+                mCachedFeatureSet = BitSet.valueOf(extendedFeatures);
+            }
         }
         return mCachedFeatureSet;
     }

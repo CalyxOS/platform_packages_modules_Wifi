@@ -9,6 +9,22 @@ flag {
 }
 
 flag {
+    name: "p2p_ownership"
+    namespace: "wifi"
+    description: "Control the P2P group ownership feature"
+    bug: "215045910"
+    is_fixed_read_only: true
+}
+
+flag {
+    name: "p2p_dual"
+    namespace: "wifi"
+    description: "Control the dual P2P group feature"
+    bug: "296063280"
+    is_fixed_read_only: true
+}
+
+flag {
     name: "delay_save_to_store"
     namespace: "wifi"
     description: "Control the feature delay the save to store in batch to reduce the blocking time"
@@ -71,11 +87,14 @@ flag {
 }
 
 flag {
-    name: "voip_detection"
+    name: "voip_detection_bugfix"
     namespace: "wifi"
     description: "Detect VoIP over Wifi and execute optimization"
     bug: "295885471"
     is_fixed_read_only: true
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }
 
 flag {
@@ -85,4 +104,69 @@ flag {
     description: "Add new API to get BSSID blocklist"
     bug: "336109216"
     is_fixed_read_only: true
+}
+
+flag {
+    name: "delayed_carrier_network_selection"
+    namespace: "wifi"
+    description: "Delay network selection for some carrier networks until a delay period has passed"
+    bug: "329142362"
+    is_fixed_read_only: true
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "local_only_connection_optimization"
+    namespace: "wifi"
+    description: "optimize local-only connection API"
+    bug: "347117408"
+    is_fixed_read_only: true
+}
+
+flag {
+    name: "softap_config_store_max_channel_width"
+    namespace: "wifi"
+    description: "Store MaxChannelBandwidth to SoftAP config"
+    bug: "344450923"
+    is_fixed_read_only: true
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "rsn_overriding"
+    namespace: "wifi"
+    description: "Wi-Fi Alliance RSN Overriding feature"
+    bug: "348669010"
+    is_fixed_read_only: true
+}
+
+flag {
+    name: "new_uri_parsing_for_escape_character"
+    namespace: "wifi"
+    description: "New parsing logic for Zxing uri format which support escape character"
+    bug: "342706482"
+    is_fixed_read_only: true
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
+    name: "aware_pairing"
+    is_exported: true
+    namespace: "wifi"
+    description: "Add new API for Aware pairing"
+    bug: "354820259"
+    is_fixed_read_only: true
+}
+
+flag {
+    name: "wifi_scorer_new_stats_collection"
+    namespace: "wifi"
+    description: "Gate WiFi Scorer new stats collection"
+    bug: "367362809"
 }

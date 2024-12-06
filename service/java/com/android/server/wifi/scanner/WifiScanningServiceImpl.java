@@ -528,12 +528,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return;
         }
         mWifiThreadRunner.post(() -> {
-            ExternalClientInfo client = (ExternalClientInfo) mClients.get(listener);
-            if (client == null) {
-                Log.e(TAG, "listener not found " + listener);
-                return;
-            }
-            localLog("stop pno scan: " + client + " AttributionTag " + featureId);
+            localLog("stop pno scan: " + packageName + " AttributionTag " + featureId);
             Message msg = Message.obtain();
             msg.what = WifiScanner.CMD_STOP_PNO_SCAN;
             msg.obj = new ScanParams(listener, null, null);
@@ -653,7 +648,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final int BASE = Protocol.BASE_WIFI_SCANNER_SERVICE;
 
     private static final int CMD_SCAN_RESULTS_AVAILABLE = BASE + 0;
-    private static final int CMD_FULL_SCAN_RESULTS = BASE + 1;
+    private static final int CMD_FULL_SCAN_SINGLE_RESULT = BASE + 1;
+    private static final int CMD_FULL_SCAN_ALL_RESULTS = BASE + 2;
     private static final int CMD_SCAN_PAUSED = BASE + 8;
     private static final int CMD_SCAN_RESTARTED = BASE + 9;
     private static final int CMD_SCAN_FAILED = BASE + 10;
@@ -1029,6 +1025,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 public void onScanRequestFailed(int errorCode) {
                     reportScanStatusForImpl(mImplIfaceName, STATUS_FAILED, errorCode);
                 }
+
+                @Override
+                public void onFullScanResults(List<ScanResult> fullScanResults,
+                        int bucketsScanned) {
+                    if (DBG) localLog("onFullScanResults received on iface " + mImplIfaceName);
+                    if (fullScanResults == null || fullScanResults.isEmpty()) {
+                        return;
+                    }
+                    reportFullScanResultsForImpl(mImplIfaceName, fullScanResults, bucketsScanned);
+                }
             }
 
             private static final int STATUS_PENDING = 0;
@@ -1086,7 +1092,15 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     ScanResult fullScanResult, int bucketsScanned) {
                 Integer status = mStatusPerImpl.get(implIfaceName);
                 if (status != null && status == STATUS_PENDING) {
-                    sendMessage(CMD_FULL_SCAN_RESULTS, 0, bucketsScanned, fullScanResult);
+                    sendMessage(CMD_FULL_SCAN_SINGLE_RESULT, 0, bucketsScanned, fullScanResult);
+                }
+            }
+
+            private void reportFullScanResultsForImpl(@NonNull String implIfaceName,
+                    List<ScanResult> fullScanResults, int bucketsScanned) {
+                Integer status = mStatusPerImpl.get(implIfaceName);
+                if (status != null && status == STATUS_PENDING) {
+                    sendMessage(CMD_FULL_SCAN_ALL_RESULTS, 0, bucketsScanned, fullScanResults);
                 }
             }
 
@@ -1223,7 +1237,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case CMD_SCAN_RESULTS_AVAILABLE:
                         if (DBG) localLog("ignored scan results available event");
                         return HANDLED;
-                    case CMD_FULL_SCAN_RESULTS:
+                    case CMD_FULL_SCAN_SINGLE_RESULT:
+                    case CMD_FULL_SCAN_ALL_RESULTS:
                         if (DBG) localLog("ignored full scan result event");
                         return HANDLED;
                     case WifiScanner.CMD_GET_SINGLE_SCAN_RESULTS:
@@ -1324,8 +1339,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         }
                         transitionTo(mIdleState);
                         return HANDLED;
-                    case CMD_FULL_SCAN_RESULTS:
-                        reportFullScanResult((ScanResult) msg.obj, /* bucketsScanned */ msg.arg2);
+                    case CMD_FULL_SCAN_SINGLE_RESULT:
+                        reportFullScanSingleResult((ScanResult) msg.obj,
+                                /* bucketsScanned */ msg.arg2);
+                        return HANDLED;
+                    case CMD_FULL_SCAN_ALL_RESULTS:
+                        reportFullScanAllResults((List<ScanResult>) msg.obj,
+                                /* bucketsScanned */ msg.arg2);
                         return HANDLED;
                     case CMD_SCAN_FAILED:
                         mWifiMetrics.incrementScanReturnEntry(
@@ -1595,7 +1615,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             clientHandlers.clear();
         }
 
-        void reportFullScanResult(@NonNull ScanResult result, int bucketsScanned) {
+        void reportFullScanSingleResult(@NonNull ScanResult result, int bucketsScanned) {
             for (RequestInfo<ScanSettings> entry : mActiveScans) {
                 if (ScanScheduleUtil.shouldReportFullScanResultForSettings(mChannelHelper,
                                 result, bucketsScanned, entry.settings, -1)) {
@@ -1613,6 +1633,36 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 entry.clientInfo.reportEvent((listener) -> {
                     try {
                         listener.onFullResult(result);
+                    } catch (RemoteException e) {
+                        loge("Failed to call onFullResult: " + entry.clientInfo);
+                    }
+                });
+            }
+        }
+
+        void reportFullScanAllResults(@NonNull List<ScanResult> results, int bucketsScanned) {
+            List<ScanResult> matchedScanResults = new ArrayList<>(results.size());
+            for (RequestInfo<ScanSettings> entry : mActiveScans) {
+                for (ScanResult result : results) {
+                    if (ScanScheduleUtil.shouldReportFullScanResultForSettings(mChannelHelper,
+                            result, bucketsScanned, entry.settings, -1)) {
+                        matchedScanResults.add(result);
+                    }
+                }
+                entry.clientInfo.reportEvent((listener) -> {
+                    try {
+                        listener.onFullResults(new ArrayList<>(matchedScanResults));
+                    } catch (RemoteException e) {
+                        loge("Failed to call onFullResult: " + entry.clientInfo);
+                    }
+                });
+                matchedScanResults.clear();
+            }
+
+            for (RequestInfo<Void> entry : mSingleScanListeners) {
+                entry.clientInfo.reportEvent((listener) -> {
+                    try {
+                        listener.onFullResults(results);
                     } catch (RemoteException e) {
                         loge("Failed to call onFullResult: " + entry.clientInfo);
                     }
@@ -1772,7 +1822,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             @Override
             public void onFullScanResult(ScanResult fullScanResult, int bucketsScanned) {
                 if (DBG) localLog("onFullScanResult received");
-                sendMessage(CMD_FULL_SCAN_RESULTS, 0, bucketsScanned, fullScanResult);
+                sendMessage(CMD_FULL_SCAN_SINGLE_RESULT, 0, bucketsScanned, fullScanResult);
             }
 
             @Override
@@ -1793,6 +1843,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             @Override
             public void onScanRequestFailed(int errorCode) {
                 sendMessage(CMD_SCAN_FAILED, errorCode);
+            }
+
+            @Override
+            public void onFullScanResults(List<ScanResult> fullScanResults, int bucketsScanned) {
+                if (DBG) localLog("onFullScanResult received");
+                if (fullScanResults == null || fullScanResults.isEmpty()) {
+                    return;
+                }
+                sendMessage(CMD_FULL_SCAN_ALL_RESULTS, 0, bucketsScanned, fullScanResults);
+
             }
         }
 
@@ -1858,8 +1918,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case CMD_SCAN_RESULTS_AVAILABLE:
                         if (DBG) localLog("ignored scan results available event");
                         break;
-
-                    case CMD_FULL_SCAN_RESULTS:
+                    case CMD_FULL_SCAN_SINGLE_RESULT:
+                    case CMD_FULL_SCAN_ALL_RESULTS:
                         if (DBG) localLog("ignored full scan result event");
                         break;
 
@@ -1935,8 +1995,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                                 results != null ? results.length : 0);
                         reportScanResults(results);
                         break;
-                    case CMD_FULL_SCAN_RESULTS:
-                        reportFullScanResult((ScanResult) msg.obj, /* bucketsScanned */ msg.arg2);
+                    case CMD_FULL_SCAN_SINGLE_RESULT:
+                        reportFullScanSingleResult((ScanResult) msg.obj,
+                                /* bucketsScanned */ msg.arg2);
+                        break;
+                    case CMD_FULL_SCAN_ALL_RESULTS:
+                        reportFullScanAllResults((List<ScanResult>) msg.obj,
+                                /* bucketsScanned */ msg.arg2);
                         break;
                     case CMD_SCAN_PAUSED:
                         reportScanResults((ScanData[]) msg.obj);
@@ -2112,7 +2177,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
         }
 
-        private void reportFullScanResult(ScanResult result, int bucketsScanned) {
+        private void reportFullScanSingleResult(ScanResult result, int bucketsScanned) {
             for (RequestInfo<ScanSettings> entry : mActiveBackgroundScans) {
                 ClientInfo ci = entry.clientInfo;
                 ScanSettings settings = entry.settings;
@@ -2133,6 +2198,40 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         }
                     });
                 }
+            }
+        }
+
+        private void reportFullScanAllResults(List<ScanResult> results, int bucketsScanned) {
+            List<ScanResult> copyResults = new ArrayList<>(results.size());
+            for (ScanResult result : results) {
+                ScanResult newResult = new ScanResult(result);
+                if (result.informationElements != null) {
+                    newResult.informationElements = result.informationElements.clone();
+                } else {
+                    newResult.informationElements = null;
+                }
+                copyResults.add(newResult);
+            }
+            List<ScanResult> matchedResults  = new ArrayList<>(copyResults.size());
+            for (RequestInfo<ScanSettings> entry : mActiveBackgroundScans) {
+                ClientInfo ci = entry.clientInfo;
+                ScanSettings settings = entry.settings;
+
+                for (ScanResult result : results) {
+                    if (mBackgroundScheduler.shouldReportFullScanResultForSettings(
+                            result, bucketsScanned, settings)) {
+
+                        matchedResults.add(result);
+                    }
+                    entry.clientInfo.reportEvent((listener) -> {
+                        try {
+                            listener.onFullResults(new ArrayList<>(matchedResults));
+                        } catch (RemoteException e) {
+                            loge("Failed to call onFullResult: " + ci);
+                        }
+                    });
+                }
+                matchedResults.clear();
             }
         }
 
@@ -3277,33 +3376,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
-    private static class InternalListener extends IWifiScannerListener.Stub {
-        InternalListener() {
-        }
-
-        @Override
-        public void onSuccess() {
-        }
-
-        @Override
-        public void onFailure(int reason, String description) {
-        }
-
-        @Override
-        public void onResults(WifiScanner.ScanData[] results) {
-        }
-
-        @Override
-        public void onFullResult(ScanResult fullScanResult) {
-        }
-
-        @Override
-        public void onSingleScanCompleted() {
-        }
-
-        @Override
-        public void onPnoNetworkFound(ScanResult[] results) {
-        }
+    private static class InternalListener extends IWifiScannerListener.Default {
     }
 
     private class LocalService extends WifiScannerInternal {

@@ -105,6 +105,7 @@ java_defaults {
     defaults: ["wifi-module-sdk-version-defaults"],
     static_libs: [
         "framework-wifi-util-lib",
+        "net-utils-framework-wifi",
         "android.hardware.wifi-V1.0-java-constants",
         "wifi-modules-utils",
         "PlatformProperties",
@@ -115,7 +116,9 @@ java_defaults {
         "app-compat-annotations",
         // Add aconfig-annotations-lib as a dependency for the optimization
         "aconfig-annotations-lib",
-        "framework-configinfrastructure",
+        // library for generated flag code read new storage
+        "aconfig_storage_reader_java",
+        "framework-configinfrastructure.stubs.module_lib",
     ],
     aidl: {
         generate_get_transaction_name: true,
@@ -216,7 +219,7 @@ java_sdk_library {
     ],
     lint: {
         strict_updatability_linting: true,
-
+        baseline_filename: "lint-baseline.xml",
     },
 }
 

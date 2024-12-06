@@ -45,11 +45,12 @@ android_test {
         "net-tests-utils",
         "net-utils-framework-common",
         "truth",
+        "wifi_aconfig_flags_lib",
     ],
 
     libs: [
-        "android.test.runner",
-        "android.test.base",
+        "android.test.runner.stubs",
+        "android.test.base.stubs",
     ],
 
     // These are required for mockito static/final mocking

@@ -21,7 +21,9 @@ import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_DEFAULT_COUNT
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.Context;
+import android.net.wifi.WifiContext;
 import android.net.wifi.WifiInfo;
+import android.net.wifi.util.WifiResourceCache;
 import android.os.SystemProperties;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -65,7 +67,7 @@ public class WifiCountryCode {
     static final int MAX_DURATION_SINCE_LAST_UPDATE_TIME_MS = 500_000;
     static final int MIN_SCAN_RSSI_DBM = -85;
     private final String mWorldModeCountryCode;
-    private final Context mContext;
+    private final WifiContext mContext;
     private final TelephonyManager mTelephonyManager;
     private final ActiveModeWarden mActiveModeWarden;
     private final WifiP2pMetrics mWifiP2pMetrics;
@@ -74,6 +76,7 @@ public class WifiCountryCode {
     private final Clock mClock;
     private final WifiPermissionsUtil mWifiPermissionsUtil;
     private final WifiCarrierInfoManager mWifiCarrierInfoManager;
+    private final WifiResourceCache mResourceCache;
     private List<ChangeListener> mListeners = new ArrayList<>();
     private boolean mVerboseLoggingEnabled = false;
     private boolean mIsCountryCodePendingToUpdateToCmm = true; // default to true for first update.
@@ -199,7 +202,7 @@ public class WifiCountryCode {
     }
 
     public WifiCountryCode(
-            Context context,
+            WifiContext context,
             ActiveModeWarden activeModeWarden,
             WifiP2pMetrics wifiP2pMetrics,
             ClientModeImplMonitor clientModeImplMonitor,
@@ -217,12 +220,13 @@ public class WifiCountryCode {
         mClock = clock;
         mWifiPermissionsUtil = wifiPermissionsUtil;
         mWifiCarrierInfoManager = wifiCarrierInfoManager;
+        mResourceCache = mContext.getResourceCache();
 
         mActiveModeWarden.registerModeChangeCallback(new ModeChangeCallbackInternal());
         clientModeImplMonitor.registerListener(new ClientModeListenerInternal());
         mWifiNative.registerCountryCodeEventListener(new CountryChangeListenerInternal());
 
-        mWorldModeCountryCode = mContext.getResources()
+        mWorldModeCountryCode = mResourceCache
                 .getString(R.string.config_wifiDriverWorldModeCountryCode);
 
         Log.d(TAG, "Default country code from system property "
@@ -383,7 +387,7 @@ public class WifiCountryCode {
 
         // Empty country code.
         if (TextUtils.isEmpty(countryCode)) {
-            if (mContext.getResources()
+            if (mResourceCache
                     .getBoolean(R.bool.config_wifi_revert_country_code_on_cellular_loss)) {
                 Log.d(TAG, "Received empty country code, reset to default country code");
                 mTelephonyCountryCode = null;
@@ -457,7 +461,7 @@ public class WifiCountryCode {
     }
 
     private boolean isCcUpdateGenericEnabled() {
-        return mContext.getResources().getBoolean(
+        return mResourceCache.getBoolean(
                 R.bool.config_wifiUpdateCountryCodeFromScanResultGeneric);
     }
 
@@ -587,7 +591,7 @@ public class WifiCountryCode {
      */
     public synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("mRevertCountryCodeOnCellularLoss: "
-                + mContext.getResources().getBoolean(
+                + mResourceCache.getBoolean(
                 R.bool.config_wifi_revert_country_code_on_cellular_loss));
         pw.println("DefaultCountryCode(system property): " + getOemDefaultCountryCode());
         pw.println("DefaultCountryCode(config store): "
@@ -612,7 +616,7 @@ public class WifiCountryCode {
     }
 
     private boolean isDriverSupportedRegChangedEvent() {
-        return mContext.getResources().getBoolean(
+        return mResourceCache.getBoolean(
                 R.bool.config_wifiDriverSupportedNl80211RegChangedEvent);
     }
 
@@ -664,7 +668,7 @@ public class WifiCountryCode {
         Set<ActiveModeManager> amms = mAmmToReadyForChangeMap.keySet();
         boolean isConcreteClientModeManagerUpdated = false;
         boolean anyAmmConfigured = false;
-        final boolean isNeedToUpdateCCToSta = mContext.getResources()
+        final boolean isNeedToUpdateCCToSta = mResourceCache
                 .getBoolean(R.bool.config_wifiStaDynamicCountryCodeUpdateSupported)
                 || isAllCmmReady();
         if (!isNeedToUpdateCCToSta) {
@@ -674,13 +678,11 @@ public class WifiCountryCode {
         boolean isCountryCodeChanged = !TextUtils.equals(mDriverCountryCode, country);
         Log.d(TAG, "setCountryCodeNative: " + country + ", isClientModeOnly: " + isClientModeOnly
                 + " mDriverCountryCode: " + mDriverCountryCode);
+        // We intend to change Country code, assume to pending to update for Cmm first.
+        mIsCountryCodePendingToUpdateToCmm = true;
         for (ActiveModeManager am : amms) {
-            if (!isConcreteClientModeManagerUpdated
+            if (isNeedToUpdateCCToSta && !isConcreteClientModeManagerUpdated
                     && am instanceof ConcreteClientModeManager) {
-                mIsCountryCodePendingToUpdateToCmm = !isNeedToUpdateCCToSta;
-                if (!isNeedToUpdateCCToSta) {
-                    continue;
-                }
                 // Set the country code using one of the active mode managers. Since
                 // country code is a chip level global setting, it can be set as long
                 // as there is at least one active interface to communicate to Wifi chip
@@ -696,6 +698,8 @@ public class WifiCountryCode {
                     if (!SdkLevel.isAtLeastS() && !isDriverSupportedRegChangedEvent()) {
                         handleCountryCodeChanged(country);
                     }
+                    // Country code was updated to cmmm succeeded, change pending to false.
+                    mIsCountryCodePendingToUpdateToCmm = false;
                 }
             } else if (!isClientModeOnly && am instanceof SoftApManager) {
                 SoftApManager sm = (SoftApManager) am;

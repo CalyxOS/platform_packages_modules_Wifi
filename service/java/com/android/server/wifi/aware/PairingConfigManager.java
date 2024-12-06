@@ -24,6 +24,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,8 +42,12 @@ public class PairingConfigManager {
 
     private static final String TAG = "AwarePairingManager";
 
-    private static final int NIK_SIZE_IN_BYTE = 16;
-    private static final int TAG_SIZE_IN_BYTE = 8;
+    // NIK size
+    public static final int NIK_SIZE_IN_BYTE = 16;
+    // TAG size
+    public static final int TAG_SIZE_IN_BYTE = 8;
+    // NIR byte array
+    public static final byte[] NIR = {'N', 'I', 'R'};
 
     /**
      * Store the NPKSA from the NAN Pairing confirmation
@@ -75,7 +80,6 @@ public class PairingConfigManager {
 
     private byte[] createRandomNik() {
         long first, second;
-
         Random mRandom = new SecureRandom();
         first = mRandom.nextLong();
         second = mRandom.nextLong();
@@ -118,14 +122,13 @@ public class PairingConfigManager {
 
     private boolean checkMatchAlias(String alias, byte[] nonce, byte[] tag, byte[] mac) {
         byte[] nik = mAliasToNikMap.get(alias);
-        byte[] nir = {'N', 'I', 'R'};
         if (nik == null) return false;
         SecretKeySpec spec = new SecretKeySpec(nik, "HmacSHA256");
 
         try {
             Mac hash = Mac.getInstance("HmacSHA256");
             hash.init(spec);
-            hash.update(nir);
+            hash.update(NIR);
             hash.update(mac);
             hash.update(nonce);
             byte[] message = Arrays.copyOf(hash.doFinal(), TAG_SIZE_IN_BYTE);
@@ -154,11 +157,8 @@ public class PairingConfigManager {
         if (info == null) {
             return;
         }
-        Set<String> pairedDevices = mPerAppPairedAliasMap.get(packageName);
-        if (pairedDevices == null) {
-            pairedDevices = new HashSet<>();
-            mPerAppPairedAliasMap.put(packageName, pairedDevices);
-        }
+        Set<String> pairedDevices = mPerAppPairedAliasMap.computeIfAbsent(packageName,
+                k -> new HashSet<>());
         pairedDevices.add(alias);
         mAliasToNikMap.put(alias, info.mPeerNik);
         mAliasToSecurityInfoMap.put(alias, info);
@@ -185,17 +185,19 @@ public class PairingConfigManager {
     public void removePairedDevice(String packageName, String alias) {
         mAliasToNikMap.remove(alias);
         mAliasToSecurityInfoMap.remove(alias);
-        Set<String> aliasSet = mPerAppPairedAliasMap.remove(packageName);
-        if (aliasSet == null) {
-            return;
+        if (mPerAppPairedAliasMap.containsKey(packageName)) {
+            mPerAppPairedAliasMap.get(packageName).remove(alias);
         }
-        aliasSet.remove(alias);
     }
 
     /**
      * Get all paired devices alias for target calling app
      */
     public List<String> getAllPairedDevices(String callingPackage) {
-        return new ArrayList<>(mPerAppPairedAliasMap.get(callingPackage));
+        Set<String> aliasSet = mPerAppPairedAliasMap.get(callingPackage);
+        if (aliasSet == null) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(aliasSet);
     }
 }

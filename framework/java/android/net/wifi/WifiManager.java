@@ -93,6 +93,7 @@ import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.HandlerExecutor;
 import com.android.modules.utils.ParceledListSlice;
+import com.android.modules.utils.StringParceledListSlice;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.wifi.flags.Flags;
 
@@ -339,9 +340,14 @@ public class WifiManager {
      */
     public static final int STATUS_LOCAL_ONLY_CONNECTION_FAILURE_NOT_FOUND = 4;
     /**
-     * Reason code if local-only network connection attempt failed with AP not responding
+     * Reason code if local-only network connection attempt failed with AP not responding.
      */
     public static final int STATUS_LOCAL_ONLY_CONNECTION_FAILURE_NO_RESPONSE = 5;
+    /**
+     * Reason code if local-only network request rejected by the user.
+     */
+    @FlaggedApi(Flags.FLAG_LOCAL_ONLY_CONNECTION_OPTIMIZATION)
+    public static final int STATUS_LOCAL_ONLY_CONNECTION_FAILURE_USER_REJECT = 6;
 
     /** @hide */
     @IntDef(prefix = {"STATUS_LOCAL_ONLY_CONNECTION_FAILURE_"},
@@ -350,7 +356,8 @@ public class WifiManager {
                     STATUS_LOCAL_ONLY_CONNECTION_FAILURE_AUTHENTICATION,
                     STATUS_LOCAL_ONLY_CONNECTION_FAILURE_IP_PROVISIONING,
                     STATUS_LOCAL_ONLY_CONNECTION_FAILURE_NOT_FOUND,
-                    STATUS_LOCAL_ONLY_CONNECTION_FAILURE_NO_RESPONSE
+                    STATUS_LOCAL_ONLY_CONNECTION_FAILURE_NO_RESPONSE,
+                    STATUS_LOCAL_ONLY_CONNECTION_FAILURE_USER_REJECT
             })
     @Retention(RetentionPolicy.SOURCE)
     public @interface LocalOnlyConnectionStatusCode {}
@@ -2388,13 +2395,15 @@ public class WifiManager {
         List<Pair<WifiConfiguration, Map<Integer, List<ScanResult>>>> configs = new ArrayList<>();
         try {
             Map<String, Map<Integer, List<ScanResult>>> results =
-                    mService.getAllMatchingPasspointProfilesForScanResults(scanResults);
+                    mService.getAllMatchingPasspointProfilesForScanResults(
+                            new ParceledListSlice<>(scanResults));
             if (results.isEmpty()) {
                 return configs;
             }
             List<WifiConfiguration> wifiConfigurations =
                     mService.getWifiConfigsForPasspointProfiles(
-                            new ArrayList<>(results.keySet()));
+                            new StringParceledListSlice(new ArrayList<>(results.keySet())))
+                            .getList();
             for (WifiConfiguration configuration : wifiConfigurations) {
                 Map<Integer, List<ScanResult>> scanResultsPerNetworkType =
                         results.get(configuration.getProfileKey());
@@ -2695,7 +2704,8 @@ public class WifiManager {
     public List<WifiConfiguration> getWifiConfigForMatchedNetworkSuggestionsSharedWithUser(
             @NonNull List<ScanResult> scanResults) {
         try {
-            return mService.getWifiConfigForMatchedNetworkSuggestionsSharedWithUser(scanResults);
+            return mService.getWifiConfigForMatchedNetworkSuggestionsSharedWithUser(
+                    new ParceledListSlice<>(scanResults)).getList();
         } catch (RemoteException e) {
             throw e.rethrowAsRuntimeException();
         }
@@ -2722,7 +2732,8 @@ public class WifiManager {
             throw new IllegalArgumentException(TAG + ": ssids can not be null");
         }
         try {
-            mService.setSsidsAllowlist(mContext.getOpPackageName(), new ArrayList<>(ssids));
+            mService.setSsidsAllowlist(mContext.getOpPackageName(),
+                    new ParceledListSlice<>(new ArrayList<>(ssids)));
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -2743,7 +2754,7 @@ public class WifiManager {
     public @NonNull Set<WifiSsid> getSsidsAllowlist() {
         try {
             return new ArraySet<WifiSsid>(
-                    mService.getSsidsAllowlist(mContext.getOpPackageName()));
+                    mService.getSsidsAllowlist(mContext.getOpPackageName()).getList());
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -2771,7 +2782,7 @@ public class WifiManager {
             return new HashMap<>();
         }
         try {
-            return mService.getMatchingOsuProviders(scanResults);
+            return mService.getMatchingOsuProviders(new ParceledListSlice<>(scanResults));
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -2799,7 +2810,7 @@ public class WifiManager {
             @NonNull Set<OsuProvider> osuProviders) {
         try {
             return mService.getMatchingPasspointConfigsForOsuProviders(
-                    new ArrayList<>(osuProviders));
+                    new ParceledListSlice<>(new ArrayList<>(osuProviders)));
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -3402,8 +3413,8 @@ public class WifiManager {
     public @NetworkSuggestionsStatusCode int addNetworkSuggestions(
             @NonNull List<WifiNetworkSuggestion> networkSuggestions) {
         try {
-            return mService.addNetworkSuggestions(
-                    networkSuggestions, mContext.getOpPackageName(), mContext.getAttributionTag());
+            return mService.addNetworkSuggestions(new ParceledListSlice<>(networkSuggestions),
+                    mContext.getOpPackageName(), mContext.getAttributionTag());
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -3455,7 +3466,7 @@ public class WifiManager {
             @NonNull List<WifiNetworkSuggestion> networkSuggestions,
             @ActionAfterRemovingSuggestion int action) {
         try {
-            return mService.removeNetworkSuggestions(networkSuggestions,
+            return mService.removeNetworkSuggestions(new ParceledListSlice<>(networkSuggestions),
                     mContext.getOpPackageName(), action);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
@@ -3471,7 +3482,7 @@ public class WifiManager {
     @RequiresPermission(ACCESS_WIFI_STATE)
     public @NonNull List<WifiNetworkSuggestion> getNetworkSuggestions() {
         try {
-            return mService.getNetworkSuggestions(mContext.getOpPackageName());
+            return mService.getNetworkSuggestions(mContext.getOpPackageName()).getList();
         } catch (RemoteException e) {
             throw e.rethrowAsRuntimeException();
         }
@@ -3570,7 +3581,7 @@ public class WifiManager {
     @Deprecated
     public List<PasspointConfiguration> getPasspointConfigurations() {
         try {
-            return mService.getPasspointConfigurations(mContext.getOpPackageName());
+            return mService.getPasspointConfigurations(mContext.getOpPackageName()).getList();
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -4567,7 +4578,8 @@ public class WifiManager {
         }
         try {
             return mService.getMatchingScanResults(
-                    networkSuggestionsToMatch, scanResults,
+                    new ParceledListSlice<>(networkSuggestionsToMatch),
+                    new ParceledListSlice<>(scanResults),
                     mContext.getOpPackageName(), mContext.getAttributionTag());
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
@@ -5158,8 +5170,9 @@ public class WifiManager {
      * <li>Device Owner (DO), Profile Owner (PO) and system apps.
      * </ul>
      *
-     * Starting with {@link android.os.Build.VERSION_CODES#TIRAMISU}, DO/COPE may set
-     * a user restriction (DISALLOW_CHANGE_WIFI_STATE) to only allow DO/PO to use this API.
+     * Starting with {@link android.os.Build.VERSION_CODES#TIRAMISU}, DO and a profile owner of
+     * an organization owned device may set a user restriction (DISALLOW_CHANGE_WIFI_STATE)
+     * to only allow DO/PO to use this API.
      */
     @Deprecated
     public boolean setWifiEnabled(boolean enabled) {
@@ -11320,8 +11333,8 @@ public class WifiManager {
         }
         try {
             if (policy != null) {
-                mService.notifyWifiSsidPolicyChanged(
-                        policy.getPolicyType(), new ArrayList<>(policy.getSsids()));
+                mService.notifyWifiSsidPolicyChanged(policy.getPolicyType(),
+                        new ParceledListSlice<>(new ArrayList<>(policy.getSsids())));
             }
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
@@ -11634,7 +11647,7 @@ public class WifiManager {
     public void addCustomDhcpOptions(@NonNull WifiSsid ssid, @NonNull byte[] oui,
             @NonNull List<DhcpOption> options) {
         try {
-            mService.addCustomDhcpOptions(ssid, oui, options);
+            mService.addCustomDhcpOptions(ssid, oui, new ParceledListSlice<>(options));
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -11894,7 +11907,8 @@ public class WifiManager {
         Objects.requireNonNull(executor, "executor cannot be null");
         Objects.requireNonNull(resultsCallback, "resultsCallback cannot be null");
         try {
-            mService.addQosPolicies(policyParamsList, new Binder(), mContext.getOpPackageName(),
+            mService.addQosPolicies(new ParceledListSlice<>(policyParamsList),
+                    new Binder(), mContext.getOpPackageName(),
                     new IListListener.Stub() {
                         @Override
                         public void onResult(List value) {
@@ -12441,18 +12455,19 @@ public class WifiManager {
     /**
      * This API allows a privileged application to set roaming mode per SSID.
      *
-     * Available for DO/COPE apps.
+     * Available for Device Owner (DO) and profile owner of an organization owned device.
      * Other apps require {@code android.Manifest.permission#NETWORK_SETTINGS} or
      * {@code android.Manifest.permission#MANAGE_WIFI_NETWORK_SELECTION} permission.
      *
      * @param ssid SSID to be mapped to apply roaming policy
-     * @param roamingMode refer {@link RoamingMode} for supported modes.
-     * @throws IllegalArgumentException if mode value is not in {@link RoamingMode}.
+     * @param roamingMode One of the {@code ROAMING_MODE_} values.
+     * @throws IllegalArgumentException if input is invalid.
      * @throws NullPointerException if the caller provided a null input.
      * @throws SecurityException if caller does not have the required permission.
-     * @throws UnsupportedOperationException if the set operation is not supported on this SDK or
-     *                                       if the feature is not available
-     *                                       {@link #isAggressiveRoamingModeSupported()}.
+     * @throws UnsupportedOperationException if the API is not supported on this SDK version or
+     *                                       {@link #isAggressiveRoamingModeSupported()} returns
+     *                                       false, but input roaming mode is
+     *                                       {@code ROAMING_MODE_AGGRESSIVE}.
      */
     @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
@@ -12473,16 +12488,14 @@ public class WifiManager {
      * This API allows a privileged application to remove roaming mode policy
      * configured using the {@link #setPerSsidRoamingMode(WifiSsid, int)}.
      *
-     * Available for DO/COPE apps.
+     * Available for Device Owner (DO) and profile owner of an organization owned device.
      * Other apps require {@code android.Manifest.permission#NETWORK_SETTINGS} or
      * {@code android.Manifest.permission#MANAGE_WIFI_NETWORK_SELECTION} permission.
      *
      * @param ssid SSID to be removed from the roaming mode policy.
      * @throws NullPointerException if the caller provided a null input.
      * @throws SecurityException if caller does not have the required permission.
-     * @throws UnsupportedOperationException if the set operation is not supported on this SDK or
-     *                                       if the feature is not available
-     *                                       {@link #isAggressiveRoamingModeSupported()}.
+     * @throws UnsupportedOperationException if the API is not supported on this SDK version.
      */
     @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
@@ -12500,7 +12513,7 @@ public class WifiManager {
      * This API allows a privileged application to get roaming mode policies
      * configured using the {@link #setPerSsidRoamingMode(WifiSsid, int)}.
      *
-     * Available for DO/COPE apps.
+     * Available for Device Owner (DO) and profile owner of an organization owned device.
      * Other apps require {@code android.Manifest.permission#NETWORK_SETTINGS} or
      * {@code android.Manifest.permission#MANAGE_WIFI_NETWORK_SELECTION} permission.
      *
@@ -12508,9 +12521,7 @@ public class WifiManager {
      * @param resultsCallback An asynchronous callback that will return the corresponding
      *                        roaming policies for the API caller.
      * @throws SecurityException if caller does not have the required permission.
-     * @throws UnsupportedOperationException if the get operation is not supported on this SDK or
-     *                                       if the feature is not available
-     *                                       {@link #isAggressiveRoamingModeSupported()}.
+     * @throws UnsupportedOperationException if the API is not supported on this SDK version.
      */
     @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)

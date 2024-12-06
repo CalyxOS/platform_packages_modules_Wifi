@@ -30,6 +30,8 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_WFD_R2;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SAE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SUITE_B;
 
+import static com.android.server.wifi.util.GeneralUtil.getCapabilityIndex;
+
 import android.annotation.NonNull;
 import android.content.Context;
 import android.hardware.wifi.V1_0.WifiChannelWidthInMhz;
@@ -73,9 +75,8 @@ import com.android.server.wifi.util.NativeUtil;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -101,6 +102,9 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
     public static final String HAL_INSTANCE_NAME = "default";
     @VisibleForTesting
     public static final long WAIT_FOR_DEATH_TIMEOUT_MS = 50L;
+    private static final long INVALID_CONNECT_TO_NETWORK_TIMESTAMP = -1L;
+    @VisibleForTesting
+    public static final long IGNORE_NETWORK_NOT_FOUND_DURATION_MS = 1000L;
     /**
      * Regex pattern for extracting the wps device type bytes.
      * Matches a strings like the following: "<categ>-<OUI>-<subcateg>";
@@ -121,8 +125,9 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
     private Map<String, SupplicantStaNetworkHalHidlImpl> mCurrentNetworkRemoteHandles =
             new HashMap<>();
     private Map<String, WifiConfiguration> mCurrentNetworkLocalConfigs = new HashMap<>();
-    private Map<String, Deque<WifiSsid>> mCurrentNetworkFallbackSsids = new HashMap<>();
-    private Map<String, WifiSsid> mCurrentNetworkFirstSsid = new HashMap<>();
+    private Map<String, Long> mCurrentNetworkConnectTimestamp = new HashMap<>();
+    private Map<String, List<WifiSsid>> mCurrentNetworkFallbackSsids = new HashMap<>();
+    private Map<String, Integer> mCurrentNetworkFallbackSsidIndex = new HashMap<>();
     private Map<String, List<Pair<SupplicantStaNetworkHalHidlImpl, WifiConfiguration>>>
             mLinkedNetworkLocalAndRemoteConfigs = new HashMap<>();
     @VisibleForTesting
@@ -644,6 +649,9 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
             mCurrentNetworkLocalConfigs.clear();
             mCurrentNetworkRemoteHandles.clear();
             mLinkedNetworkLocalAndRemoteConfigs.clear();
+            mCurrentNetworkConnectTimestamp.clear();
+            mCurrentNetworkFallbackSsidIndex.clear();
+            mCurrentNetworkFallbackSsids.clear();
         }
     }
 
@@ -976,24 +984,48 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
     }
 
     /**
+     * Returns whether to ignore the NETWORK_NOT_FOUND event in case it is based on stale cached
+     * scans.
+     *
+     * @param ifaceName Name of the interface.
+     * @return true if we should ignore NETWORK_NOT_FOUND, false otherwise
+     */
+    public boolean shouldIgnoreNetworkNotFound(@NonNull String ifaceName) {
+        synchronized (mLock) {
+            return mClock.getElapsedSinceBootMillis()
+                    - mCurrentNetworkConnectTimestamp.getOrDefault(
+                            ifaceName, INVALID_CONNECT_TO_NETWORK_TIMESTAMP)
+                    < IGNORE_NETWORK_NOT_FOUND_DURATION_MS;
+        }
+    }
+
+    /**
      * Connects to the next fallback SSID (if any) of the current network upon a network not found
      * notification. If all the fallback SSIDs have been tried, return to the first SSID and go
      * through the fallbacks again.
      *
-     * Returns false if there's no fallback SSID to connect to, or if we've wrapped back to the
-     * first SSID.
+     * @return true if we're connecting to a fallback SSID, false if there are no fallback SSIDs, or
+     *         we've looped back to the first SSID.
      */
     public boolean connectToFallbackSsid(@NonNull String ifaceName) {
         synchronized (mLock) {
-            Deque<WifiSsid> fallbackSsids = mCurrentNetworkFallbackSsids.get(ifaceName);
+            List<WifiSsid> fallbackSsids = mCurrentNetworkFallbackSsids.get(ifaceName);
             if (fallbackSsids == null || fallbackSsids.isEmpty()) {
                 return false;
             }
-            WifiSsid nextSsid = fallbackSsids.removeFirst();
-            fallbackSsids.addLast(nextSsid);
-            Log.d(TAG, "connectToFallbackSsid " + nextSsid);
+            // Select the next fallback ssid.
+            // Note that the very first SSID we connect to is index 0, so the next SSID (i.e the
+            // first fallback SSID) will start with index 1. Once the entire list has been tried,
+            // wrap back to the first SSID at index 0.
+            int nextIndex = mCurrentNetworkFallbackSsidIndex.getOrDefault(ifaceName, 0) + 1;
+            if (nextIndex >= fallbackSsids.size()) {
+                nextIndex = 0;
+            }
+            mCurrentNetworkFallbackSsidIndex.put(ifaceName, nextIndex);
+            WifiSsid nextSsid = fallbackSsids.get(nextIndex);
+            Log.d(TAG, "connectToFallbackSsid " + nextSsid + " at index " + nextIndex);
             connectToNetwork(ifaceName, getCurrentNetworkLocalConfig(ifaceName), nextSsid);
-            return !Objects.equals(nextSsid, mCurrentNetworkFirstSsid.get(ifaceName));
+            return nextIndex != 0;
         }
     }
 
@@ -1049,7 +1081,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
                     supplicantConfig.SSID = actualSsid.toString();
                 } else {
                     mCurrentNetworkFallbackSsids.remove(ifaceName);
-                    mCurrentNetworkFirstSsid.remove(ifaceName);
+                    mCurrentNetworkFallbackSsidIndex.remove(ifaceName);
                     if (config.SSID != null) {
                         // No actual SSID supplied, so select from the network selection BSSID
                         // or the latest candidate BSSID.
@@ -1059,15 +1091,15 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
                             Log.d(TAG, "Selecting supplicant SSID " + supplicantSsid);
                             supplicantConfig.SSID = supplicantSsid.toString();
 
-                            Deque<WifiSsid> fallbackSsids = new ArrayDeque<>(mSsidTranslator
-                                    .getAllPossibleOriginalSsids(configSsid));
+                            List<WifiSsid> fallbackSsids = mSsidTranslator
+                                    .getAllPossibleOriginalSsids(configSsid);
                             fallbackSsids.remove(supplicantSsid);
                             if (!fallbackSsids.isEmpty()) {
                                 // Store the unused SSIDs to fallback on in
                                 // connectToFallbackSsid(String) if the chosen SSID isn't found.
-                                fallbackSsids.addLast(supplicantSsid);
+                                fallbackSsids.add(0, supplicantSsid);
                                 mCurrentNetworkFallbackSsids.put(ifaceName, fallbackSsids);
-                                mCurrentNetworkFirstSsid.put(ifaceName, supplicantSsid);
+                                mCurrentNetworkFallbackSsidIndex.put(ifaceName, 0);
                             }
                         }
                         // Set the actual translation of the original SSID in case the untranslated
@@ -1111,6 +1143,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
                 loge("Failed to select network configuration: " + config.getProfileKey());
                 return false;
             }
+            mCurrentNetworkConnectTimestamp.put(ifaceName, mClock.getElapsedSinceBootMillis());
             return true;
         }
     }
@@ -1222,6 +1255,9 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
             SupplicantStaNetworkHalHidlImpl networkHandle =
                     checkSupplicantStaNetworkAndLogFailure(ifaceName, "disableCurrentNetwork");
             if (networkHandle == null) return false;
+            Log.d(TAG, "Remove fallback ssids to avoid endless loop");
+            mCurrentNetworkFallbackSsids.remove(ifaceName);
+            mCurrentNetworkFallbackSsidIndex.remove(ifaceName);
             return networkHandle.disable();
         }
     }
@@ -2925,24 +2961,20 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
     }
 
     /**
-     * Returns a bitmask of advanced capabilities: WPA3 SAE/SUITE B and OWE
-     * Bitmask used is:
-     * - WIFI_FEATURE_WPA3_SAE
-     * - WIFI_FEATURE_WPA3_SUITE_B
-     * - WIFI_FEATURE_OWE
+     *  See comments for {@link ISupplicantStaIfaceHal#getAdvancedCapabilities(String)}
      *
      *  This is a v1.2+ HAL feature.
-     *  On error, or if these features are not supported, 0 is returned.
+     *  On error, or if these features are not supported, an empty BitSet is returned.
      */
-    public long getAdvancedCapabilities(@NonNull String ifaceName) {
+    public @NonNull BitSet getAdvancedCapabilities(@NonNull String ifaceName) {
         final String methodStr = "getAdvancedCapabilities";
 
-        long advancedCapabilities = 0;
+        BitSet advancedCapabilities = new BitSet();
         int keyMgmtCapabilities = getKeyMgmtCapabilities(ifaceName);
 
         if ((keyMgmtCapabilities & android.hardware.wifi.supplicant.V1_2.ISupplicantStaNetwork
                 .KeyMgmtMask.SAE) != 0) {
-            advancedCapabilities |= WIFI_FEATURE_WPA3_SAE;
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_WPA3_SAE));
 
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": SAE supported");
@@ -2951,7 +2983,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
 
         if ((keyMgmtCapabilities & android.hardware.wifi.supplicant.V1_2.ISupplicantStaNetwork
                 .KeyMgmtMask.SUITE_B_192) != 0) {
-            advancedCapabilities |= WIFI_FEATURE_WPA3_SUITE_B;
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_WPA3_SUITE_B));
 
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": SUITE_B supported");
@@ -2960,7 +2992,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
 
         if ((keyMgmtCapabilities & android.hardware.wifi.supplicant.V1_2.ISupplicantStaNetwork
                 .KeyMgmtMask.OWE) != 0) {
-            advancedCapabilities |= WIFI_FEATURE_OWE;
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_OWE));
 
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": OWE supported");
@@ -2969,13 +3001,13 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
 
         if ((keyMgmtCapabilities & android.hardware.wifi.supplicant.V1_2.ISupplicantStaNetwork
                 .KeyMgmtMask.DPP) != 0) {
-            advancedCapabilities |= WIFI_FEATURE_DPP;
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_DPP));
 
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": DPP supported");
             }
             if (isV1_4()) {
-                advancedCapabilities |= WIFI_FEATURE_DPP_ENROLLEE_RESPONDER;
+                advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_DPP_ENROLLEE_RESPONDER));
                 if (mVerboseLoggingEnabled) {
                     Log.v(TAG, methodStr + ": DPP ENROLLEE RESPONDER supported");
                 }
@@ -2983,8 +3015,9 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
         }
 
         if (isV1_4()) {
-            advancedCapabilities |= WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS
-                    | WIFI_FEATURE_DECORATED_IDENTITY;
+            advancedCapabilities.set(
+                    getCapabilityIndex(WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS));
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_DECORATED_IDENTITY));
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": Passpoint T&C supported");
                 Log.v(TAG, methodStr + ": RFC 7542 decorated identity supported");
@@ -2993,7 +3026,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
 
         if ((keyMgmtCapabilities & android.hardware.wifi.supplicant.V1_3.ISupplicantStaNetwork
                 .KeyMgmtMask.WAPI_PSK) != 0) {
-            advancedCapabilities |= WIFI_FEATURE_WAPI;
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_WAPI));
 
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": WAPI supported");
@@ -3002,7 +3035,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
 
         if ((keyMgmtCapabilities & android.hardware.wifi.supplicant.V1_3.ISupplicantStaNetwork
                 .KeyMgmtMask.FILS_SHA256) != 0) {
-            advancedCapabilities |= WIFI_FEATURE_FILS_SHA256;
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_FILS_SHA256));
 
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": FILS_SHA256 supported");
@@ -3010,7 +3043,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
         }
         if ((keyMgmtCapabilities & android.hardware.wifi.supplicant.V1_3.ISupplicantStaNetwork
                 .KeyMgmtMask.FILS_SHA384) != 0) {
-            advancedCapabilities |= WIFI_FEATURE_FILS_SHA384;
+            advancedCapabilities.set(getCapabilityIndex(WIFI_FEATURE_FILS_SHA384));
 
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": FILS_SHA384 supported");
@@ -3164,15 +3197,12 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
     }
 
     /**
-     * Get the driver supported features through supplicant.
-     *
-     * @param ifaceName Name of the interface.
-     * @return bitmask defined by WifiManager.WIFI_FEATURE_*.
+     * See comments for {@link ISupplicantStaIfaceHal#getWpaDriverFeatureSet(String)}
      */
-    public long getWpaDriverFeatureSet(@NonNull String ifaceName) {
+    public @NonNull BitSet getWpaDriverFeatureSet(@NonNull String ifaceName) {
         final String methodStr = "getWpaDriverFeatureSet";
         Mutable<Integer> drvCapabilitiesMask = new Mutable<>(0);
-        long featureSet = 0;
+        BitSet featureSet = new BitSet();
 
         if (isV1_4()) {
             drvCapabilitiesMask = getWpaDriverCapabilities_1_4(ifaceName);
@@ -3180,17 +3210,17 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
             drvCapabilitiesMask = getWpaDriverCapabilities_1_3(ifaceName);
         } else {
             Log.i(TAG, "Method " + methodStr + " is not supported in existing HAL");
-            return 0;
+            return new BitSet();
         }
 
         if ((drvCapabilitiesMask.value & WpaDriverCapabilitiesMask.MBO) != 0) {
-            featureSet |= WIFI_FEATURE_MBO;
+            featureSet.set(getCapabilityIndex(WIFI_FEATURE_MBO));
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": MBO supported");
             }
             if ((drvCapabilitiesMask.value
                     & WpaDriverCapabilitiesMask.OCE) != 0) {
-                featureSet |= WIFI_FEATURE_OCE;
+                featureSet.set(getCapabilityIndex(WIFI_FEATURE_OCE));
                 if (mVerboseLoggingEnabled) {
                     Log.v(TAG, methodStr + ": OCE supported");
                 }
@@ -3199,7 +3229,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
 
         if ((drvCapabilitiesMask.value
                 & android.hardware.wifi.supplicant.V1_4.WpaDriverCapabilitiesMask.SAE_PK) != 0) {
-            featureSet |= WIFI_FEATURE_SAE_PK;
+            featureSet.set(getCapabilityIndex(WIFI_FEATURE_SAE_PK));
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": SAE-PK supported");
             }
@@ -3207,7 +3237,7 @@ public class SupplicantStaIfaceHalHidlImpl implements ISupplicantStaIfaceHal {
 
         if ((drvCapabilitiesMask.value
                 & android.hardware.wifi.supplicant.V1_4.WpaDriverCapabilitiesMask.WFD_R2) != 0) {
-            featureSet |= WIFI_FEATURE_WFD_R2;
+            featureSet.set(getCapabilityIndex(WIFI_FEATURE_WFD_R2));
             if (mVerboseLoggingEnabled) {
                 Log.v(TAG, methodStr + ": WFD-R2 supported");
             }
