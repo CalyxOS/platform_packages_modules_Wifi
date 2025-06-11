@@ -61,6 +61,10 @@ public class WifiThreadRunner {
         mHandler = handler;
     }
 
+    public Handler getHandler() {
+        return mHandler;
+    }
+
     /**
      * Synchronously runs code on the main Wifi thread and return a value.
      * <b>Blocks</b> the calling thread until the callable completes execution on the main Wifi

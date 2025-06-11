@@ -197,6 +197,14 @@ public final class RangingResult implements Parcelable {
             mR2iTxLtfRepetitions = other.mR2iTxLtfRepetitions;
             mNumTxSpatialStreams = other.mNumTxSpatialStreams;
             mNumRxSpatialStreams = other.mNumRxSpatialStreams;
+            mIsRangingAuthenticated = other.mIsRangingAuthenticated;
+            mIsRangingFrameProtected = other.mIsRangingFrameProtected;
+            mIsSecureHeLtfEnabled = other.mIsSecureHeLtfEnabled;
+            mSecureHeLtfProtocolVersion = other.mSecureHeLtfProtocolVersion;
+            if (other.mPasnComebackCookie != null) {
+                mPasnComebackCookie = other.mPasnComebackCookie.clone();
+                mPasnComebackAfterMillis = other.mPasnComebackAfterMillis;
+            }
             mVendorData = new ArrayList<>(other.mVendorData);
         }
 
@@ -1168,6 +1176,12 @@ public final class RangingResult implements Parcelable {
         if (SdkLevel.isAtLeastV()) {
             dest.writeList(mVendorData);
         }
+        dest.writeBoolean(mIsRangingAuthenticated);
+        dest.writeBoolean(mIsRangingFrameProtected);
+        dest.writeBoolean(mIsSecureHeLtfEnabled);
+        dest.writeLong(mPasnComebackAfterMillis);
+        dest.writeByteArray(mPasnComebackCookie);
+        dest.writeInt(mSecureHeLtfProtocolVersion);
     }
 
     public static final @android.annotation.NonNull Creator<RangingResult> CREATOR =
@@ -1208,6 +1222,12 @@ public final class RangingResult implements Parcelable {
                     if (SdkLevel.isAtLeastV()) {
                         builder.setVendorData(ParcelUtil.readOuiKeyedDataList(in));
                     }
+                    builder.setRangingAuthenticated(in.readBoolean())
+                            .setRangingFrameProtected(in.readBoolean())
+                            .setSecureHeLtfEnabled(in.readBoolean())
+                            .setPasnComebackAfterMillis(in.readLong())
+                            .setPasnComebackCookie(in.createByteArray())
+                            .setSecureHeLtfProtocolVersion(in.readInt());
                     return builder.build();
                 }
             };
@@ -1239,11 +1259,11 @@ public final class RangingResult implements Parcelable {
                 .append(", numTxSpatialStreams=").append(mNumTxSpatialStreams)
                 .append(", numRxSpatialStreams=").append(mNumRxSpatialStreams)
                 .append(", vendorData=").append(mVendorData)
-                .append(", isRangingAuthenticated").append(mIsRangingAuthenticated)
-                .append(", isRangingFrameProtected").append(mIsRangingFrameProtected)
-                .append(", isSecureHeLtfEnabled").append(mIsSecureHeLtfEnabled)
-                .append(", pasnComebackCookie").append(Arrays.toString(mPasnComebackCookie))
-                .append(", pasnComebackAfterMillis").append(mPasnComebackAfterMillis)
+                .append(", isRangingAuthenticated=").append(mIsRangingAuthenticated)
+                .append(", isRangingFrameProtected=").append(mIsRangingFrameProtected)
+                .append(", isSecureHeLtfEnabled=").append(mIsSecureHeLtfEnabled)
+                .append(", pasnComebackCookie=").append(Arrays.toString(mPasnComebackCookie))
+                .append(", pasnComebackAfterMillis=").append(mPasnComebackAfterMillis)
                 .append("]").toString();
     }
 

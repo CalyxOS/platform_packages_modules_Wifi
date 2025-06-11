@@ -47,10 +47,9 @@ public final class WifiP2pUsdBasedServiceDiscoveryConfig implements Parcelable {
 
     /**
      * Frequencies on which the service needs to be scanned for.
-     * Used when band is set to WIFI_BAND_UNSPECIFIED.
+     * Used when band is set to ScanResult.UNSPECIFIED.
      */
     private int[] mFrequenciesMhz;
-
 
     private WifiP2pUsdBasedServiceDiscoveryConfig(int band, @NonNull int[] frequencies) {
         mBand = band;
@@ -125,6 +124,8 @@ public final class WifiP2pUsdBasedServiceDiscoveryConfig implements Parcelable {
      * Builder for {@link WifiP2pUsdBasedServiceDiscoveryConfig}.
      */
     public static final class Builder {
+        /** Maximum allowed number of channel frequencies */
+        private static final int MAXIMUM_CHANNEL_FREQUENCIES = 48;
         private int mBand;
         private int[] mFrequenciesMhz;
 
@@ -169,12 +170,18 @@ public final class WifiP2pUsdBasedServiceDiscoveryConfig implements Parcelable {
          *     mutually exclusive. Setting band and frequencies both is invalid.
          * <p>
          *     Optional. 2437 by default.
-         * @param frequenciesMhz Frequencies in MHz to scan for services.
+         * @param frequenciesMhz Frequencies in MHz to scan for services. This value cannot be an
+         *                       empty array of frequencies.
          * @return Instance of {@link Builder} to enable chaining of the builder method.
          */
         @NonNull
         public Builder setFrequenciesMhz(@NonNull int[] frequenciesMhz) {
             Objects.requireNonNull(frequenciesMhz, "Frequencies cannot be null");
+            if (frequenciesMhz.length < 1 || frequenciesMhz.length > MAXIMUM_CHANNEL_FREQUENCIES) {
+                throw new IllegalArgumentException("Number of frequencies: "
+                        + frequenciesMhz.length
+                        + " must be between 1 and " + MAXIMUM_CHANNEL_FREQUENCIES);
+            }
             mFrequenciesMhz = frequenciesMhz;
             return this;
         }

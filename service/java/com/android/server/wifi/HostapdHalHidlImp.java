@@ -1285,6 +1285,7 @@ public class HostapdHalHidlImp implements IHostapdHal {
                             mapHalBandwidthToSoftApInfo(bandwidth),
                             mapHalGenerationToWifiStandard(generation),
                             MacAddress.fromBytes(apIfaceInstanceMacAddress),
+                            null,
                             Collections.emptyList());
                 }
             } catch (IllegalArgumentException iae) {

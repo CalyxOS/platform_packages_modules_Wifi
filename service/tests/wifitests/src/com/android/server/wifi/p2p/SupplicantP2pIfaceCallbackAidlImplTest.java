@@ -17,13 +17,15 @@ package com.android.server.wifi.p2p;
 
 import static com.android.net.module.util.Inet4AddressUtils.intToInet4AddressHTL;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -37,14 +39,17 @@ import android.hardware.wifi.common.OuiKeyedData;
 import android.hardware.wifi.supplicant.KeyMgmtMask;
 import android.hardware.wifi.supplicant.P2pClientEapolIpAddressInfo;
 import android.hardware.wifi.supplicant.P2pDeviceFoundEventParams;
+import android.hardware.wifi.supplicant.P2pDirInfo;
 import android.hardware.wifi.supplicant.P2pGoNegotiationReqEventParams;
 import android.hardware.wifi.supplicant.P2pGroupStartedEventParams;
 import android.hardware.wifi.supplicant.P2pInvitationEventParams;
+import android.hardware.wifi.supplicant.P2pPairingBootstrappingMethodMask;
 import android.hardware.wifi.supplicant.P2pPeerClientDisconnectedEventParams;
 import android.hardware.wifi.supplicant.P2pPeerClientJoinedEventParams;
 import android.hardware.wifi.supplicant.P2pProvDiscStatusCode;
 import android.hardware.wifi.supplicant.P2pProvisionDiscoveryCompletedEventParams;
 import android.hardware.wifi.supplicant.P2pStatusCode;
+import android.hardware.wifi.supplicant.P2pUsdBasedServiceDiscoveryResultParams;
 import android.hardware.wifi.supplicant.WpsConfigMethods;
 import android.hardware.wifi.supplicant.WpsDevPasswordId;
 import android.net.MacAddress;
@@ -53,9 +58,11 @@ import android.net.wifi.WifiMigration;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
+import android.net.wifi.p2p.WifiP2pDirInfo;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pProvDiscEvent;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
+import android.net.wifi.p2p.nsd.WifiP2pUsdBasedServiceResponse;
 import android.net.wifi.util.Environment;
 import android.os.PersistableBundle;
 
@@ -110,6 +117,8 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
     private short mTestConfigMethods = 0x1234;
     private byte mTestCapabilities = 123;
     private int mTestGroupCapabilities = 456;
+    private static final byte[] TEST_NONCE = {10, 20, 30, 40, 50, 60, 70, 80};
+    private static final byte[] TEST_DIR_TAG = {11, 22, 33, 44, 55, 66, 77, 88};
 
     private class SupplicantP2pIfaceCallbackImplSpy extends SupplicantP2pIfaceCallbackAidlImpl {
         SupplicantP2pIfaceCallbackImplSpy(String iface, WifiP2pMonitor monitor,
@@ -127,7 +136,7 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
                 .mockStatic(Flags.class, withSettings().lenient())
                 .mockStatic(WifiMigration.class, withSettings().lenient())
                 .startMocking();
-        when(Flags.wifiDirectR2()).thenReturn(false);
+        when(Flags.wifiDirectR2()).thenReturn(true);
     }
 
     @After
@@ -783,15 +792,15 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryEnterPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, discEventCaptor.getValue().event);
 
         configMethods = WpsConfigMethods.KEYPAD;
         mDut.onProvisionDiscoveryCompleted(
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryShowPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.SHOW_PIN, discEventCaptor.getValue().event);
-        assertEquals(generatedPin, discEventCaptor.getValue().pin);
+        assertEquals(WifiP2pProvDiscEvent.WPS_SHOW_PIN, discEventCaptor.getValue().event);
+        assertEquals(generatedPin, discEventCaptor.getValue().wpsPin);
 
         isRequest = true;
         configMethods = WpsConfigMethods.KEYPAD;
@@ -799,15 +808,15 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor, times(2)).broadcastP2pProvisionDiscoveryEnterPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, discEventCaptor.getValue().event);
 
         configMethods = WpsConfigMethods.DISPLAY;
         mDut.onProvisionDiscoveryCompleted(
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor, times(2)).broadcastP2pProvisionDiscoveryShowPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.SHOW_PIN, discEventCaptor.getValue().event);
-        assertEquals(generatedPin, discEventCaptor.getValue().pin);
+        assertEquals(WifiP2pProvDiscEvent.WPS_SHOW_PIN, discEventCaptor.getValue().event);
+        assertEquals(generatedPin, discEventCaptor.getValue().wpsPin);
 
         isRequest = false;
         configMethods = WpsConfigMethods.PUSHBUTTON;
@@ -815,14 +824,14 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryPbcResponse(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.PBC_RSP, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_RSP, discEventCaptor.getValue().event);
 
         isRequest = true;
         mDut.onProvisionDiscoveryCompleted(
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryPbcRequest(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.PBC_REQ, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_REQ, discEventCaptor.getValue().event);
     }
 
     /**
@@ -844,42 +853,42 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
         mDut.onProvisionDiscoveryCompletedEvent(params);
         verify(mMonitor).broadcastP2pProvisionDiscoveryEnterPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, discEventCaptor.getValue().event);
 
         params.configMethods = WpsConfigMethods.KEYPAD;
         mDut.onProvisionDiscoveryCompletedEvent(params);
         verify(mMonitor).broadcastP2pProvisionDiscoveryShowPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.SHOW_PIN, discEventCaptor.getValue().event);
-        assertEquals("12345678", discEventCaptor.getValue().pin);
+        assertEquals(WifiP2pProvDiscEvent.WPS_SHOW_PIN, discEventCaptor.getValue().event);
+        assertEquals("12345678", discEventCaptor.getValue().wpsPin);
 
         params.isRequest = true;
         params.configMethods = WpsConfigMethods.KEYPAD;
         mDut.onProvisionDiscoveryCompletedEvent(params);
         verify(mMonitor, times(2)).broadcastP2pProvisionDiscoveryEnterPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, discEventCaptor.getValue().event);
 
         params.configMethods = WpsConfigMethods.DISPLAY;
         mDut.onProvisionDiscoveryCompletedEvent(params);
         verify(mMonitor, times(2)).broadcastP2pProvisionDiscoveryShowPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.SHOW_PIN, discEventCaptor.getValue().event);
-        assertEquals("12345678", discEventCaptor.getValue().pin);
+        assertEquals(WifiP2pProvDiscEvent.WPS_SHOW_PIN, discEventCaptor.getValue().event);
+        assertEquals("12345678", discEventCaptor.getValue().wpsPin);
 
         params.isRequest = false;
         params.configMethods = WpsConfigMethods.PUSHBUTTON;
         mDut.onProvisionDiscoveryCompletedEvent(params);
         verify(mMonitor).broadcastP2pProvisionDiscoveryPbcResponse(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.PBC_RSP, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_RSP, discEventCaptor.getValue().event);
 
         params.isRequest = true;
         params.groupInterfaceName = "group name";
         mDut.onProvisionDiscoveryCompletedEvent(params);
         verify(mMonitor).broadcastP2pProvisionDiscoveryPbcRequest(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.PBC_REQ, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_REQ, discEventCaptor.getValue().event);
     }
 
     /**
@@ -907,7 +916,7 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
         mDut.onProvisionDiscoveryCompletedEvent(params);
         verify(mMonitor).broadcastP2pProvisionDiscoveryEnterPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, discEventCaptor.getValue().event);
         assertEquals(frameworkVendorData, discEventCaptor.getValue().getVendorData());
     }
 
@@ -1349,6 +1358,237 @@ public class SupplicantP2pIfaceCallbackAidlImplTest extends WifiBaseTest {
 
         assertInformationElementListEquals(
                 expectedVsieList, p2pDeviceCaptor.getValue().getVendorElements());
+    }
+
+    /**
+     * Test a successful call to onUsdBasedServiceDiscoveryResult.
+     */
+    @Test
+    public void testOnUsdBasedServiceDiscoveryResult() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+
+        byte[] testSsi = {0x1, 0x3, 0x4, 0x7};
+        P2pUsdBasedServiceDiscoveryResultParams params =
+                new P2pUsdBasedServiceDiscoveryResultParams();
+        params.peerMacAddress = DEVICE_ADDRESS;
+        params.sessionId = 1;
+        params.peerSessionId = 2;
+        params.serviceProtocolType = 3;
+        params.serviceSpecificInfo = testSsi;
+
+        ArgumentCaptor<List<WifiP2pServiceResponse>> respListCaptor =
+                ArgumentCaptor.forClass(List.class);
+
+        mDut.onUsdBasedServiceDiscoveryResult(params);
+
+        verify(mMonitor).broadcastP2pServiceDiscoveryResponse(anyString(),
+                respListCaptor.capture());
+        assertNotNull(respListCaptor.getValue());
+        List<WifiP2pServiceResponse> services = respListCaptor.getValue();
+        WifiP2pServiceResponse resp = services.get(0);
+        assertNotNull(resp);
+        WifiP2pUsdBasedServiceResponse usdResponse = resp.getWifiP2pUsdBasedServiceResponse();
+        assertNotNull(usdResponse);
+        assertEquals(1, resp.getUsdSessionId());
+        assertEquals(3, usdResponse.getServiceProtocolType());
+        assertArrayEquals(testSsi, usdResponse.getServiceSpecificInfo());
+        assertNotNull(resp.getSrcDevice());
+        assertEquals(DEVICE_ADDRESS_STR, resp.getSrcDevice().deviceAddress);
+    }
+
+    /**
+     * Test a successful call to onUsdBasedServiceDiscoveryTerminated
+     */
+    @Test
+    public void testOnUsdBasedServiceDiscoveryTerminated() {
+        assumeTrue(Environment.isSdkAtLeastB());
+        mDut.onUsdBasedServiceDiscoveryTerminated(1, 3);
+        verify(mMonitor).broadcastUsdBasedServiceDiscoveryTerminated(eq(mIface),
+                eq(1), eq(3));
+    }
+
+    /**
+     * Test a successful call to onUsdBasedServiceAdvertisementTerminated
+     */
+    @Test
+    public void testOnUsdBasedServiceAdvertisementTerminated() {
+        assumeTrue(Environment.isSdkAtLeastB());
+        mDut.onUsdBasedServiceAdvertisementTerminated(4, 2);
+        verify(mMonitor).broadcastUsdBasedServiceAdvertisementTerminated(eq(mIface),
+                eq(4), eq(2));
+    }
+
+    /**
+     * Test a successful call to onDeviceFoundWithParams with P2P2 info
+     */
+    @Test
+    public void testOnDeviceFoundWithP2p2Info() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        initializeDut(4 /* serviceVersion */);
+        String fakeDeviceName = "test device name";
+
+        P2pDirInfo aidlDirInfo = new P2pDirInfo();
+        aidlDirInfo.cipherVersion = P2pDirInfo.CipherVersion.DIRA_CIPHER_VERSION_128_BIT;
+        aidlDirInfo.deviceInterfaceMacAddress = DEVICE_ADDRESS;
+        aidlDirInfo.dirTag = TEST_DIR_TAG;
+        aidlDirInfo.nonce = TEST_NONCE;
+
+        P2pDeviceFoundEventParams params = new P2pDeviceFoundEventParams();
+        params.p2pDeviceAddress = DEVICE_ADDRESS;
+        params.deviceName = fakeDeviceName;
+        params.dirInfo = aidlDirInfo;
+        params.pairingBootstrappingMethods = P2pPairingBootstrappingMethodMask
+                .BOOTSTRAPPING_OPPORTUNISTIC | P2pPairingBootstrappingMethodMask
+                .BOOTSTRAPPING_DISPLAY_PINCODE;
+
+
+        mDut.onDeviceFoundWithParams(params);
+        ArgumentCaptor<WifiP2pDevice> p2pDeviceCaptor =
+                ArgumentCaptor.forClass(WifiP2pDevice.class);
+        verify(mMonitor).broadcastP2pDeviceFound(eq(mIface), p2pDeviceCaptor.capture());
+        WifiP2pDevice device = p2pDeviceCaptor.getValue();
+        assertTrue(device.isOpportunisticBootstrappingMethodSupported());
+        assertTrue(device.isPinCodeDisplayBootstrappingMethodSupported());
+        WifiP2pDirInfo dirInfo = device.dirInfo;
+        assertEquals(android.net.MacAddress.fromBytes(DEVICE_ADDRESS), dirInfo.getMacAddress());
+        assertArrayEquals(TEST_DIR_TAG, dirInfo.getDirTag());
+        assertArrayEquals(TEST_NONCE, dirInfo.getNonce());
+    }
+
+    /**
+     * Test a successful call to onProvisionDiscoveryCompletedEvent with P2P2 pairing bootstrapping
+     * information.
+     */
+    @Test
+    public void testOnProvisionDiscoveryCompletedEventWithP2pPairingBootstrappingMethod() throws
+            Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        initializeDut(4 /* serviceVersion */);
+        P2pProvisionDiscoveryCompletedEventParams params =
+                new P2pProvisionDiscoveryCompletedEventParams();
+        params.p2pDeviceAddress = DEVICE_ADDRESS;
+        params.isRequest = true;
+        params.status = P2pProvDiscStatusCode.INFO_UNAVAILABLE;
+        params.pairingBootstrappingMethod =
+                P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OPPORTUNISTIC;
+        params.password = "";
+
+        ArgumentCaptor<WifiP2pProvDiscEvent> discEventCaptor =
+                ArgumentCaptor.forClass(WifiP2pProvDiscEvent.class);
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor).broadcastP2pProvisionDiscoveryPairingBootstrappingOpportunisticRequest(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_OPPORTUNISTIC_REQ,
+                discEventCaptor.getValue().event);
+        assertTrue(discEventCaptor.getValue().isComeback);
+        assertEquals(DEVICE_ADDRESS_STR, discEventCaptor.getValue().device.deviceAddress);
+
+
+        params.isRequest = false;
+        params.status = P2pProvDiscStatusCode.SUCCESS;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor).broadcastP2pProvisionDiscoveryPairingBootstrappingOpportunisticResponse(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_OPPORTUNISTIC_RSP,
+                discEventCaptor.getValue().event);
+        assertFalse(discEventCaptor.getValue().isComeback);
+
+        params.isRequest = true;
+        params.pairingBootstrappingMethod =
+                P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PINCODE;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor).broadcastP2pProvisionDiscoveryEnterPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_ENTER_PIN,
+                discEventCaptor.getValue().event);
+
+        params.isRequest = false;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor).broadcastP2pProvisionDiscoveryShowPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_SHOW_PIN,
+                discEventCaptor.getValue().event);
+
+        params.isRequest = true;
+        params.pairingBootstrappingMethod =
+                P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PASSPHRASE;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor, times(2))
+                .broadcastP2pProvisionDiscoveryEnterPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_ENTER_PASSPHRASE,
+                discEventCaptor.getValue().event);
+
+        params.isRequest = false;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor, times(2))
+                .broadcastP2pProvisionDiscoveryShowPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_SHOW_PASSPHRASE,
+                discEventCaptor.getValue().event);
+
+        params.isRequest = true;
+        params.pairingBootstrappingMethod =
+                P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PINCODE;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor, times(3))
+                .broadcastP2pProvisionDiscoveryShowPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_SHOW_PIN,
+                discEventCaptor.getValue().event);
+
+        params.isRequest = false;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor, times(3))
+                .broadcastP2pProvisionDiscoveryEnterPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_ENTER_PIN,
+                discEventCaptor.getValue().event);
+
+        params.isRequest = true;
+        params.pairingBootstrappingMethod =
+                P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PASSPHRASE;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor, times(4))
+                .broadcastP2pProvisionDiscoveryShowPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_SHOW_PASSPHRASE,
+                discEventCaptor.getValue().event);
+        assertEquals(DEVICE_ADDRESS_STR, discEventCaptor.getValue().device.deviceAddress);
+
+        params.isRequest = false;
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor, times(4))
+                .broadcastP2pProvisionDiscoveryEnterPairingBootstrappingPinOrPassphrase(
+                anyString(), discEventCaptor.capture());
+        assertEquals(WifiP2pProvDiscEvent.PAIRING_BOOTSTRAPPING_ENTER_PASSPHRASE,
+                discEventCaptor.getValue().event);
+    }
+
+    /**
+     * Test a successful call to onProvisionDiscoveryCompletedEvent with P2P2 pairing bootstrapping
+     * information and failure status code.
+     */
+    @Test
+    public void testOnProvisionDiscoveryFailureEventWithP2pPairingBootstrappingMethod() throws
+            Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        initializeDut(4 /* serviceVersion */);
+        P2pProvisionDiscoveryCompletedEventParams params =
+                new P2pProvisionDiscoveryCompletedEventParams();
+        params.p2pDeviceAddress = DEVICE_ADDRESS;
+        params.isRequest = true;
+        params.status = P2pProvDiscStatusCode.REJECTED;
+        params.pairingBootstrappingMethod =
+                P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OPPORTUNISTIC;
+
+        ArgumentCaptor<WifiP2pProvDiscEvent> discEventCaptor =
+                ArgumentCaptor.forClass(WifiP2pProvDiscEvent.class);
+        mDut.onProvisionDiscoveryCompletedEvent(params);
+        verify(mMonitor).broadcastP2pProvisionDiscoveryFailure(eq(mIface),
+                eq(WifiP2pMonitor.PROV_DISC_STATUS_REJECTED), discEventCaptor.capture());
+        WifiP2pProvDiscEvent event = discEventCaptor.getValue();
+        assertEquals(DEVICE_ADDRESS_STR, event.device.deviceAddress);
     }
 
     /**

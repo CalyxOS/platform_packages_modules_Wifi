@@ -43,7 +43,7 @@ public class WifiP2pProvDiscEventTest {
     public void testPbcReqEvent() throws Exception {
         WifiP2pProvDiscEvent event =
                 new WifiP2pProvDiscEvent(EVENT_PBC_REQ_STRING + " " + DEVICE_ADDRESS);
-        assertEquals(WifiP2pProvDiscEvent.PBC_REQ, event.event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_REQ, event.event);
         assertEquals(DEVICE_ADDRESS, event.device.deviceAddress);
     }
 
@@ -55,7 +55,7 @@ public class WifiP2pProvDiscEventTest {
     public void testPbcRespEvent() throws Exception {
         WifiP2pProvDiscEvent event =
                 new WifiP2pProvDiscEvent(EVENT_PBC_RSP_STRING + " " + DEVICE_ADDRESS);
-        assertEquals(WifiP2pProvDiscEvent.PBC_RSP, event.event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_RSP, event.event);
         assertEquals(DEVICE_ADDRESS, event.device.deviceAddress);
     }
 
@@ -66,7 +66,7 @@ public class WifiP2pProvDiscEventTest {
     public void testEnterPinEvent() throws Exception {
         WifiP2pProvDiscEvent event =
                 new WifiP2pProvDiscEvent(EVENT_ENTER_PIN_STRING + " " + DEVICE_ADDRESS);
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, event.event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, event.event);
         assertEquals(DEVICE_ADDRESS, event.device.deviceAddress);
     }
 
@@ -78,9 +78,9 @@ public class WifiP2pProvDiscEventTest {
         WifiP2pProvDiscEvent event =
                 new WifiP2pProvDiscEvent(
                         EVENT_SHOW_PIN_STRING + " " + DEVICE_ADDRESS + " " + TEST_PIN);
-        assertEquals(WifiP2pProvDiscEvent.SHOW_PIN, event.event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_SHOW_PIN, event.event);
         assertEquals(DEVICE_ADDRESS, event.device.deviceAddress);
-        assertEquals(TEST_PIN, event.pin);
+        assertEquals(TEST_PIN, event.wpsPin);
     }
 
     /**

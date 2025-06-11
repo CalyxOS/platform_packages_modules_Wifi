@@ -35,6 +35,7 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseIntArray;
 
+import androidx.annotation.Keep;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
 
@@ -869,6 +870,7 @@ public final class SoftApConfiguration implements Parcelable {
      *
      * @hide
      */
+    @Keep
     public @NonNull int[] getBands() {
         int[] bands = new int[mChannels.size()];
         for (int i = 0; i < bands.length; i++) {
@@ -1424,6 +1426,45 @@ public final class SoftApConfiguration implements Parcelable {
             mIsClientIsolationEnabled = other.mIsClientIsolationEnabled;
         }
 
+       /**
+         * Builds the {@link SoftApConfiguration} without any check.
+         *
+         * @return A new {@link SoftApConfiguration}, as configured by previous method calls.
+         *
+         * @hide
+         */
+        @VisibleForTesting
+        @NonNull
+        public SoftApConfiguration buildWithoutCheck() {
+            return new SoftApConfiguration(
+                    mWifiSsid,
+                    mBssid,
+                    mPassphrase,
+                    mHiddenSsid,
+                    mChannels,
+                    mSecurityType,
+                    mMaxNumberOfClients,
+                    mAutoShutdownEnabled,
+                    mShutdownTimeoutMillis,
+                    mClientControlByUser,
+                    mBlockedClientList,
+                    mAllowedClientList,
+                    mMacRandomizationSetting,
+                    mBridgedModeOpportunisticShutdownEnabled,
+                    mIeee80211axEnabled,
+                    mIeee80211beEnabled,
+                    mIsUserConfiguration,
+                    mBridgedModeOpportunisticShutdownTimeoutMillis,
+                    mVendorElements,
+                    mPersistentRandomizedMacAddress,
+                    mAllowedAcsChannels2g,
+                    mAllowedAcsChannels5g,
+                    mAllowedAcsChannels6g,
+                    mMaxChannelBandwidth,
+                    mVendorData,
+                    mIsClientIsolationEnabled);
+        }
+
         /**
          * Builds the {@link SoftApConfiguration}.
          *
@@ -1448,6 +1489,11 @@ public final class SoftApConfiguration implements Parcelable {
             if (!CompatChanges.isChangeEnabled(
                     REMOVE_ZERO_FOR_TIMEOUT_SETTING) && mShutdownTimeoutMillis == DEFAULT_TIMEOUT) {
                 mShutdownTimeoutMillis = 0; // Use 0 for legacy app.
+            }
+
+            if (SdkLevel.isAtLeastB() && !mIeee80211axEnabled) {
+                // Force 11BE to false since 11ax has dependency with 11AX.
+                mIeee80211beEnabled = false;
             }
             return new SoftApConfiguration(
                     mWifiSsid,
@@ -1818,41 +1864,21 @@ public final class SoftApConfiguration implements Parcelable {
         /**
          * Specifies the channels and associated bands for the APs.
          * <p>
-         * When more than 1 channel is set, this will bring up concurrent APs on the requested
-         * channels and bands (if possible).
-         * <p>
-         * Valid channels are country dependent.
-         * The {@code SoftApCapability#getSupportedChannelList(int)} can be used to obtain
-         * valid channels in each band.
-         * <p>
-         * Use {@link WifiManager#isBridgedApConcurrencySupported()} to determine
-         * whether or not concurrent APs are supported.
-         *
-         * <p>
-         * If not set, the default for the channel is the special value 0 which has the framework
-         * auto-select a valid channel from the band configured with {@code #setBands(int[])}.
-         * <p>
-         * The channel auto selection will be offloaded to driver when
-         * {@code SoftApCapability#areFeaturesSupported(long)}
-         * with {@code SoftApCapability.SOFTAP_FEATURE_ACS_OFFLOAD}
-         * returns true. The driver will auto select the best channel (e.g. best performance)
-         * based on environment interference. Check {@code SoftApCapability} for more detail.
-         * <p>
-         * Requires the driver to support {@code SoftApCapability.SOFTAP_FEATURE_ACS_OFFLOAD}
-         * when multiple bands are configured without specified channel value (i.e. channel is
-         * the special value 0). Otherwise,
-         * {@code WifiManager#startTetheredHotspot(SoftApConfiguration)} will report error code
-         * {@code WifiManager#SAP_START_FAILURE_UNSUPPORTED_CONFIGURATION}.
-         * <p>
-         * Note: Only supports 2.4GHz + 5GHz bands. If any other band is set, will report error
-         * {@code WifiManager#SAP_START_FAILURE_UNSUPPORTED_CONFIGURATION}.
-         * <p>
          * The API contains (band, channel) input since the 6GHz band uses the same channel
          * numbering scheme as is used in the 2.4GHz and 5GHz band. Therefore, both are needed to
          * uniquely identify individual channels.
          * <p>
          * Reference the Wi-Fi channel numbering and the channelization in IEEE 802.11-2016
          * specifications, section 17.3.8.4.2, 17.3.8.4.3 and Table 15-6.
+         * <p>
+         * Using the special value 0 which has the framework auto-select a valid channel
+         * from the band configured.
+         * When more than 1 channel/band is set, this will bring up concurrent APs on the requested
+         * channels and bands (if possible).
+         * Use {@link WifiManager#isBridgedApConcurrencySupported()} to determine
+         * whether concurrent APs are supported.
+         * If not set, the default value is {@link #BAND_2GHZ} with the special channel value 0
+         * which has the framework auto-select from {@link #BAND_2GHZ}.
          *
          * <p>
          * @param channels SparseIntArray (key: {@code #BandType} , value: channel) consists of

@@ -105,7 +105,7 @@ public class WifiScannerTest {
         MockitoAnnotations.initMocks(this);
         mLooper = new TestLooper();
         mHandler = spy(new Handler(mLooper.getLooper()));
-        mWifiScanner = new WifiScanner(mContext, mService, mLooper.getLooper());
+        mWifiScanner = new WifiScanner(mContext, mService);
         mLooper.dispatchAll();
         when(mParcelableScanData.getResults()).thenReturn(mScanData);
         when(mContext.getOpPackageName()).thenReturn(TEST_PACKAGE_NAME);
@@ -597,12 +597,12 @@ public class WifiScannerTest {
     @Test
     public void testWifiScannerConcurrentServiceStart() {
         WifiScanner wifiScanner = new WifiScanner(
-                mContext, mService, WifiFrameworkInitializer.getInstanceLooper());
+                mContext, mService);
 
         Thread thread1 = new Thread(() -> {
             try {
                 WifiScanner wifiScanner1 = new WifiScanner(
-                        mContext, mService, WifiFrameworkInitializer.getInstanceLooper());
+                        mContext, mService);
             }  catch (NullPointerException e) {
                 fail("WifiScanner can't be initialized! " + e);
             }

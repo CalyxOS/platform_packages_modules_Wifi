@@ -18,11 +18,16 @@ package com.android.server.wifi;
 
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.net.MacAddress;
 import android.net.wifi.MscsParams;
 import android.net.wifi.QosPolicyParams;
 import android.net.wifi.SecurityParams;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.usd.PublishConfig;
+import android.net.wifi.usd.SubscribeConfig;
+
+import com.android.server.wifi.usd.UsdRequestManager;
 
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -858,6 +863,91 @@ interface ISupplicantStaIfaceHal {
      * Returns true if this device supports RSN Overriding, false otherwise.
      */
     default boolean isRsnOverridingSupported(@NonNull String ifaceName) {
+        return false;
+    }
+
+    /**
+     * Returns USD capabilities for the interface.
+     *
+     * @param ifaceName Name of the interface.
+     * @return UsdCapabilities if available, otherwise null.
+     */
+    @Nullable
+    default SupplicantStaIfaceHal.UsdCapabilitiesInternal getUsdCapabilities(String ifaceName) {
+        return null;
+    }
+
+    /**
+     * Starts USD publish operation.
+     *
+     * @param interfaceName Name of the interface.
+     * @param cmdId An id for this command.
+     * @param publishConfig Publish configuration.
+     * @return true if succeeds otherwise false.
+     */
+    default boolean startUsdPublish(String interfaceName, int cmdId, PublishConfig publishConfig) {
+        return false;
+    }
+
+    /**
+     * Registers USD event callbacks.
+     *
+     * @param usdEventsCallback event callbacks which need to be registered.
+     */
+    default void registerUsdEventsCallback(
+            UsdRequestManager.UsdNativeEventsCallback usdEventsCallback) {}
+
+    /**
+     * Starts USD subscribe operation.
+     *
+     * @param interfaceName Name of the interface.
+     * @param cmdId An id for this command.
+     * @param subscribeConfig Subscribe configuration.
+     * @return true if succeeds otherwise false.
+     */
+    default boolean startUsdSubscribe(String interfaceName, int cmdId,
+            SubscribeConfig subscribeConfig) {
+        return false;
+    }
+
+    /**
+     * Updates an ongoing USD publish operation.
+     *
+     * @param interfaceName Name of the interface.
+     * @param publishId publish id for this session.
+     * @param ssi Service specific info.
+     */
+    default void updateUsdPublish(String interfaceName, int publishId, byte[] ssi) {}
+
+    /**
+     * Cancels an ongoing USD publish.
+     *
+     * @param interfaceName Name of the interface.
+     * @param publishId publish id for the session.
+     */
+    default void cancelUsdPublish(String interfaceName, int publishId) {}
+
+    /**
+     * Cancels an ongoing USD subscribe.
+     *
+     * @param interfaceName Name of the interface.
+     * @param subscribeId Subscribe id for the session.
+     */
+    default void cancelUsdSubscribe(String interfaceName, int subscribeId) {}
+
+    /**
+     * Sends message on a USD publish/subscribe session.
+     *
+     * @param interfaceName Name of the interface.
+     * @param ownId Id for the session.
+     * @param peerId Id for the peer session.
+     * @param peerMacAddress Mac address of the peer session.
+     * @param message Bytes of data to send.
+     * @return true if succeeds otherwise false.
+     */
+    default boolean sendUsdMessage(String interfaceName, int ownId, int peerId,
+            MacAddress peerMacAddress,
+            byte[] message) {
         return false;
     }
 }

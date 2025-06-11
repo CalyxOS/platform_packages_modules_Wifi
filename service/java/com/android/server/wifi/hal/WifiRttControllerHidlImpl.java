@@ -641,7 +641,8 @@ public class WifiRttControllerHidlImpl implements IWifiRttController {
                     config.numFramesPerBurst = request.mRttBurstSize;
                     config.numRetriesPerRttFrame = 0; // irrelevant for 2-sided RTT
                     config.numRetriesPerFtmr = 3;
-                    config.burstDuration = 9;
+                    config.burstDuration = WifiRttController.getOptimumBurstDuration(
+                            request.mRttBurstSize);
                 } else { // AP + all non-NAN requests
                     config.mustRequestLci = true;
                     config.mustRequestLcr = true;
@@ -650,7 +651,8 @@ public class WifiRttControllerHidlImpl implements IWifiRttController {
                     config.numFramesPerBurst = request.mRttBurstSize;
                     config.numRetriesPerRttFrame = (config.type == RttType.TWO_SIDED ? 0 : 3);
                     config.numRetriesPerFtmr = 3;
-                    config.burstDuration = 9;
+                    config.burstDuration = WifiRttController.getOptimumBurstDuration(
+                            request.mRttBurstSize);
 
                     if (cap != null) { // constrain parameters per device capabilities
                         config.mustRequestLci = config.mustRequestLci && cap.lciSupported;

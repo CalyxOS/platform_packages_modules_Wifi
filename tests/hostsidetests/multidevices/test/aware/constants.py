@@ -15,73 +15,82 @@
 # Lint as: python3
 """Constants for Wifi-Aware Mobly test"""
 
-import enum
 import dataclasses
 import datetime
+import enum
 import operator
 
 from mobly import utils
 
 # Package name for the Wi-Fi Aware snippet application
-WIFI_AWARE_SNIPPET_PACKAGE_NAME = "com.google.snippet.wifi.aware"
-WIFI_SNIPPET_PACKAGE_NAME = "com.google.snippet.wifi"
+WIFI_AWARE_SNIPPET_PACKAGE_NAME = 'com.google.snippet.wifi.aware'
+WIFI_SNIPPET_PACKAGE_NAME = 'com.google.snippet.wifi'
 # Timeout duration for Wi-Fi state change operations
 WAIT_WIFI_STATE_TIME_OUT = datetime.timedelta(seconds=30)
-AWARE_NETWORK_INFO_CLASS_NAME = "android.net.wifi.aware.WifiAwareNetworkInfo"
+AWARE_NETWORK_INFO_CLASS_NAME = 'android.net.wifi.aware.WifiAwareNetworkInfo'
 
-SERVICE_NAME = "service_name"
-SERVICE_SPECIFIC_INFO = "service_specific_info"
-MATCH_FILTER = "match_filter"
-MATCH_FILTER_LIST = "MatchFilterList"
-SUBSCRIBE_TYPE = "subscribe_type"
-PUBLISH_TYPE = "publish_type"
-TERMINATE_NOTIFICATION_ENABLED = "terminate_notification_enabled"
-MAX_DISTANCE_MM = "max_distance_mm"
-PAIRING_CONFIG = "pairing_config"
-AWARE_NETWORK_INFO_CLASS_NAME = "android.net.wifi.aware.WifiAwareNetworkInfo"
-TTL_SEC = "TtlSec"
-INSTANTMODE_ENABLE = "InstantModeEnabled"
-FEATURE_WIFI_AWARE = "feature:android.hardware.wifi.aware"
+SERVICE_NAME = 'service_name'
+SERVICE_SPECIFIC_INFO = 'service_specific_info'
+MATCH_FILTER = 'match_filter'
+MATCH_FILTER_LIST = 'MatchFilterList'
+SUBSCRIBE_TYPE = 'subscribe_type'
+PUBLISH_TYPE = 'publish_type'
+TERMINATE_NOTIFICATION_ENABLED = 'terminate_notification_enabled'
+MAX_DISTANCE_MM = 'max_distance_mm'
+PAIRING_CONFIG = 'pairing_config'
+AWARE_NETWORK_INFO_CLASS_NAME = 'android.net.wifi.aware.WifiAwareNetworkInfo'
+TTL_SEC = 'TtlSec'
+INSTANTMODE_ENABLE = 'InstantModeEnabled'
+FEATURE_WIFI_AWARE = 'feature:android.hardware.wifi.aware'
+DISCOVERY_KEY_RANGING_ENABLED = 'ranging_enabled'
+DISCOVERY_KEY_MIN_DISTANCE_MM = 'MinDistanceMm'
+DISCOVERY_KEY_MAX_DISTANCE_MM = 'MaxDistanceMm'
 
-#onServiceLost reason code
+
+# onServiceLost reason code
 EASON_PEER_NOT_VISIBLE = 1
+
 
 class WifiAwareTestConstants:
     """Constants for Wi-Fi Aware test."""
-    SERVICE_NAME = "CtsVerifierTestService"
-    MATCH_FILTER_BYTES = "bytes used for matching".encode("utf-8")
-    PUB_SSI = "Extra bytes in the publisher discovery".encode("utf-8")
-    SUB_SSI = "Arbitrary bytes for the subscribe discovery".encode("utf-8")
+
+    SERVICE_NAME = 'CtsVerifierTestService'
+    MATCH_FILTER_BYTES = 'bytes used for matching'.encode('utf-8')
+    PUB_SSI = 'Extra bytes in the publisher discovery'.encode('utf-8')
+    SUB_SSI = 'Arbitrary bytes for the subscribe discovery'.encode('utf-8')
     LARGE_ENOUGH_DISTANCE_MM = 100000
-    PASSWORD = "Some super secret password"
-    ALIAS_PUBLISH = "publisher"
-    ALIAS_SUBSCRIBE = "subscriber"
+    PASSWORD = 'Some super secret password'
+    ALIAS_PUBLISH = 'publisher'
+    ALIAS_SUBSCRIBE = 'subscriber'
     TEST_WAIT_DURATION_MS = 10000
-    TEST_MESSAGE = "test message!"
+    TEST_MESSAGE = 'test message!'
     MESSAGE_ID = 1234
-    MSG_CLIENT_TO_SERVER = 'GET SOME BYTES [Random Identifier: %s]' % utils.rand_ascii_str(5)
-    MSG_SERVER_TO_CLIENT = 'PUT SOME OTHER BYTES [Random Identifier: %s]' % utils.rand_ascii_str(5)
-    PMK = "01234567890123456789012345678901"
+    MSG_CLIENT_TO_SERVER = (
+        'GET SOME BYTES [Random Identifier: %s]' % utils.rand_ascii_str(5)
+    )
+    MSG_SERVER_TO_CLIENT = (
+        'PUT SOME OTHER BYTES [Random Identifier: %s]' % utils.rand_ascii_str(5)
+    )
+    PMK = '01234567890123456789012345678901'
     # 6 == TCP
     TRANSPORT_PROTOCOL_TCP = 6
     CHANNEL_IN_MHZ = 5745
-
 
 
 @enum.unique
 class WifiAwareSnippetEventName(enum.StrEnum):
     """Represents event names for Wi-Fi Aware snippet operations."""
 
-    GET_PAIRED_DEVICE = "getPairedDevices"
-    ON_AVAILABLE = "onAvailable"
-    ON_LOST = "onLost"
+    GET_PAIRED_DEVICE = 'getPairedDevices'
+    ON_AVAILABLE = 'onAvailable'
+    ON_LOST = 'onLost'
 
 
 @enum.unique
 class WifiAwareSnippetParams(enum.StrEnum):
     """Represents parameters for Wi-Fi Aware snippet events."""
 
-    ALIAS_LIST = "getPairedDevices"
+    ALIAS_LIST = 'getPairedDevices'
 
 
 @enum.unique
@@ -92,54 +101,58 @@ class DiscoverySessionCallbackMethodType(enum.StrEnum):
     https://developer.android.com/reference/android/net/wifi/aware/DiscoverySessionCallback
     """
 
-    PUBLISH_STARTED = "onPublishStarted"
-    SUBSCRIBE_STARTED = "onSubscribeStarted"
-    SESSION_CONFIG_UPDATED = "onSessionConfigUpdated"
-    SESSION_CONFIG_FAILED = "onSessionConfigFailed"
-    SESSION_TERMINATED = "onSessionTerminated"
-    SERVICE_DISCOVERED = "onServiceDiscovered"
-    SERVICE_DISCOVERED_WITHIN_RANGE = "onServiceDiscoveredWithinRange"
-    MESSAGE_SEND_SUCCEEDED = "onMessageSendSucceeded"
-    MESSAGE_SEND_FAILED = "onMessageSendFailed"
-    MESSAGE_RECEIVED = "onMessageReceived"
-    PAIRING_REQUEST_RECEIVED = "onPairingSetupRequestReceived"
-    PAIRING_SETUP_SUCCEEDED = "onPairingSetupSucceeded"
-    PAIRING_SETUP_FAILED = "onPairingSetupFailed"
-    PAIRING_VERIFICATION_SUCCEEDED = "onPairingVerificationSucceed"
-    PAIRING_VERIFICATION_FAILED = "onPairingVerificationFailed"
-    BOOTSTRAPPING_SUCCEEDED = "onBootstrappingSucceeded"
-    BOOTSTRAPPING_FAILED = "onBootstrappingFailed"
+    PUBLISH_STARTED = 'onPublishStarted'
+    SUBSCRIBE_STARTED = 'onSubscribeStarted'
+    SESSION_CONFIG_UPDATED = 'onSessionConfigUpdated'
+    SESSION_CONFIG_FAILED = 'onSessionConfigFailed'
+    SESSION_TERMINATED = 'onSessionTerminated'
+    SERVICE_DISCOVERED = 'onServiceDiscovered'
+    SERVICE_DISCOVERED_WITHIN_RANGE = 'onServiceDiscoveredWithinRange'
+    MESSAGE_SEND_SUCCEEDED = 'onMessageSendSucceeded'
+    MESSAGE_SEND_FAILED = 'onMessageSendFailed'
+    MESSAGE_RECEIVED = 'onMessageReceived'
+    PAIRING_REQUEST_RECEIVED = 'onPairingSetupRequestReceived'
+    PAIRING_SETUP_SUCCEEDED = 'onPairingSetupSucceeded'
+    PAIRING_SETUP_FAILED = 'onPairingSetupFailed'
+    PAIRING_VERIFICATION_SUCCEEDED = 'onPairingVerificationSucceed'
+    PAIRING_VERIFICATION_FAILED = 'onPairingVerificationFailed'
+    BOOTSTRAPPING_SUCCEEDED = 'onBootstrappingSucceeded'
+    BOOTSTRAPPING_FAILED = 'onBootstrappingFailed'
     # Event for the publish or subscribe step: triggered by onPublishStarted or SUBSCRIBE_STARTED or
     # onSessionConfigFailed
-    DISCOVER_RESULT = "discoveryResult"
+    DISCOVER_RESULT = 'discoveryResult'
     # Event for the message send result.
-    MESSAGE_SEND_RESULT = "messageSendResult"
-    SESSION_CB_ON_SERVICE_LOST = "WifiAwareSessionOnServiceLost"
-    SESSION_CB_KEY_LOST_REASON = "lostReason"
+    MESSAGE_SEND_RESULT = 'messageSendResult'
+    SESSION_CB_ON_SERVICE_LOST = 'WifiAwareSessionOnServiceLost'
+    SESSION_CB_KEY_LOST_REASON = 'lostReason'
 
 
 @enum.unique
 class DiscoverySessionCallbackParamsType(enum.StrEnum):
-    CALLBACK_NAME = "callbackName"
-    IS_SESSION_INIT = "isSessionInitialized"
-    MESSAGE_ID = "messageId"
-    RECEIVE_MESSAGE = "receivedMessage"
+    CALLBACK_NAME = 'callbackName'
+    IS_SESSION_INIT = 'isSessionInitialized'
+    MESSAGE_ID = 'messageId'
+    RECEIVE_MESSAGE = 'receivedMessage'
 
 
 @enum.unique
 class NetworkCbEventName(enum.StrEnum):
     """Represents the event name for ConnectivityManager network callbacks."""
-    NETWORK_CALLBACK = "NetworkCallback"
+
+    NETWORK_CALLBACK = 'NetworkCallback'
+    NETWORK_CB_LOST = 'CallbackLost'
 
 
 @enum.unique
 class NetworkCbEventKey(enum.StrEnum):
     """Represents event data keys for ConnectivityManager network callbacks."""
-    NETWORK = "network"
-    CALLBACK_NAME = "callbackName"
-    NETWORK_CAPABILITIES = "networkCapabilities"
-    TRANSPORT_INFO_CLASS_NAME = "transportInfoClassName"
-    CHANNEL_IN_MHZ = "channelInMhz"
+
+    NETWORK = 'network'
+    CALLBACK_NAME = 'callbackName'
+    NETWORK_CAPABILITIES = 'networkCapabilities'
+    TRANSPORT_INFO_CLASS_NAME = 'transportInfoClassName'
+    CHANNEL_IN_MHZ = 'channelInMhz'
+    NETWORK_INTERFACE_NAME = 'interfaceName'
 
 
 @enum.unique
@@ -149,8 +162,13 @@ class NetworkCbName(enum.StrEnum):
     These callbacks are correspond to DiscoverySessionCallback in the Android documentation:
     https://developer.android.com/reference/android/net/ConnectivityManager.NetworkCallback
     """
-    ON_UNAVAILABLE = "onUnavailable"
-    ON_CAPABILITIES_CHANGED = "onCapabilitiesChanged"
+
+    ON_UNAVAILABLE = 'onUnavailable'
+    ON_CAPABILITIES_CHANGED = 'onCapabilitiesChanged'
+    ON_PROPERTIES_CHANGED = 'onLinkPropertiesChanged'
+    NET_CAP_IPV6 = 'aware_ipv6'
+    NET_CAP_PORT = 'port'
+    NET_CAP_TRANSPORT_PROTOCOL = 'aware_transport_protocol'
 
 
 @enum.unique
@@ -159,47 +177,64 @@ class RangingResultCb(enum.StrEnum):
 
     # Callback methods related to RangingResultCallback:
     # https://developer.android.com/reference/android/net/wifi/rtt/RangingResultCallback
-    CB_METHOD_ON_RANGING_RESULT = "onRangingResults"
-    CB_METHOD_ON_RANGING_FAILURE = "onRangingFailure"
+    CB_METHOD_ON_RANGING_RESULT = 'onRangingResults'
+    CB_METHOD_ON_RANGING_FAILURE = 'onRangingFailure'
 
     # Other constants related to snippet implementation.
-    EVENT_NAME_ON_RANGING_RESULT = "WifiRttRangingOnRangingResult"
-    DATA_KEY_CALLBACK_NAME = "callbackName"
+    EVENT_NAME_ON_RANGING_RESULT = 'WifiRttRangingOnRangingResult'
+    DATA_KEY_CALLBACK_NAME = 'callbackName'
     DATA_KEY_RESULTS = 'results'
     DATA_KEY_RESULT_STATUS = 'status'
     DATA_KEY_RESULT_DISTANCE_MM = 'distanceMm'
     DATA_KEY_RESULT_RSSI = 'rssi'
     DATA_KEY_PEER_ID = 'peerId'
     DATA_KEY_MAC = 'mac'
+    DATA_KEY_DISTANCE_STD_DEV_MM = 'distanceStdDevMm'
+    DATA_KEY_NUM_ATTEMPTED_MEASUREMENTS = 'numAttemptedMeasurements'
+    DATA_KEY_NUM_SUCCESSFUL_MEASUREMENTS = 'numSuccessfulMeasurements'
+    DATA_KEY_LCI = 'lci'
+    DATA_KEY_LCR = 'lcr'
+    DATA_KEY_TIMESTAMP = 'timestamp'
+    DATA_KEY_MAC_AS_STRING = 'macAsString'
+
+
+@enum.unique
+class RangingStatusCb(enum.IntEnum):
+    """Constant for handling RTT status."""
+
+    EVENT_CB_RANGING_STATUS_SUCCESS = 0
+    EVENT_CB_RANGING_STATUS_FAIL = 1
+    EVENT_CB_RANGING_STATUS_RESPONDER_DOES_NOT_SUPPORT_IEEE80211MC = 2
 
 
 @enum.unique
 class RangingResultStatusCode(enum.IntEnum):
-  """Ranging result status code.
+    """Ranging result status code.
 
-  This corresponds to status constants in RangingRequest:
-  https://developer.android.com/reference/android/net/wifi/rtt/RangingResult
-  """
+    This corresponds to status constants in RangingRequest:
+    https://developer.android.com/reference/android/net/wifi/rtt/RangingResult
+    """
 
-  SUCCESS = 0
-  FAIL = 1
-  RESPONDER_DOES_NOT_SUPPORT_IEEE80211MC = 2
+    SUCCESS = 0
+    FAIL = 1
+    RESPONDER_DOES_NOT_SUPPORT_IEEE80211MC = 2
 
 
 @enum.unique
 class WifiAwareSnippetParams(enum.StrEnum):
     """Represents parameters for Wi-Fi Aware snippet events."""
-    SERVICE_SPECIFIC_INFO = "serviceSpecificInfo"
-    RECEIVED_MESSAGE = "receivedMessage"
-    PEER_HANDLE = "peerHandle"
-    MATCH_FILTER = "matchFilter"
-    MATCH_FILTER_VALUE = "value"
-    PAIRING_CONFIG = "pairingConfig"
-    DISTANCE_MM = "distanceMm"
-    LAST_MESSAGE_ID = "lastMessageId"
-    PAIRING_REQUEST_ID = "pairingRequestId"
-    BOOTSTRAPPING_METHOD = "bootstrappingMethod"
-    PEER_ID = "peerId"
+
+    SERVICE_SPECIFIC_INFO = 'serviceSpecificInfo'
+    RECEIVED_MESSAGE = 'receivedMessage'
+    PEER_HANDLE = 'peerHandle'
+    MATCH_FILTER = 'matchFilter'
+    MATCH_FILTER_VALUE = 'value'
+    PAIRING_CONFIG = 'pairingConfig'
+    DISTANCE_MM = 'distanceMm'
+    LAST_MESSAGE_ID = 'lastMessageId'
+    PAIRING_REQUEST_ID = 'pairingRequestId'
+    BOOTSTRAPPING_METHOD = 'bootstrappingMethod'
+    PEER_ID = 'peerId'
 
 
 @enum.unique
@@ -233,6 +268,7 @@ class BootstrappingMethod(enum.IntEnum):
     documentation:
     https://developer.android.com/reference/android/net/wifi/aware/AwarePairingConfig#summary
     """
+
     OPPORTUNISTIC = 1
     PIN_CODE_DISPLAY = 2
     PASSPHRASE_DISPLAY = 4
@@ -251,14 +287,17 @@ class AwarePairingConfig:
     These configurations correspond to AwarePairingConfig in the Android documentation:
     https://developer.android.com/reference/android/net/wifi/aware/AwarePairingConfig?hl=en
     """
+
     pairing_cache_enabled: bool = False
     pairing_setup_enabled: bool = False
     pairing_verification_enabled: bool = False
-    bootstrapping_methods: BootstrappingMethod = BootstrappingMethod.OPPORTUNISTIC
+    bootstrapping_methods: BootstrappingMethod = (
+        BootstrappingMethod.OPPORTUNISTIC
+    )
 
     def to_dict(self) -> dict[str, int | bool]:
         result = dataclasses.asdict(self)
-        result["bootstrapping_methods"] = self.bootstrapping_methods.value
+        result['bootstrapping_methods'] = self.bootstrapping_methods.value
         return result
 
 
@@ -269,31 +308,44 @@ class SubscribeConfig:
     These configurations correspond to SubscribeConfig in the Android documentation:
     https://developer.android.com/reference/android/net/wifi/aware/SubscribeConfig
     """
+
     subscribe_type: SubscribeType
     service_specific_info: bytes = WifiAwareTestConstants.SUB_SSI
-    match_filter: list[bytes] | None = (WifiAwareTestConstants.MATCH_FILTER_BYTES, )
+    match_filter: list[bytes] | None = (
+        WifiAwareTestConstants.MATCH_FILTER_BYTES,
+    )
+    min_distance_mm: int | None = None
     max_distance_mm: int | None = None
     pairing_config: AwarePairingConfig | None = None
     terminate_notification_enabled: bool = True
     service_name: str = WifiAwareTestConstants.SERVICE_NAME
 
-    def to_dict(self) -> dict[str, str | bool | list[str] | int | dict[str, int | bool | None]]:
+    def to_dict(
+        self,
+    ) -> dict[str, str | bool | list[str] | int | dict[str, int | bool | None]]:
         result = dataclasses.asdict(self)
-        result["subscribe_type"] = self.subscribe_type.value
-        result["service_specific_info"] = self.service_specific_info.decode("utf-8")
+        result['subscribe_type'] = self.subscribe_type.value
+        result['service_specific_info'] = self.service_specific_info.decode(
+            'utf-8'
+        )
 
         if self.match_filter is None:
-            del result["match_filter"]
+            del result['match_filter']
         else:
-            result["match_filter"] = [mf.decode("utf-8") for mf in self.match_filter]
+            result['match_filter'] = [
+                mf.decode('utf-8') for mf in self.match_filter
+            ]
 
         if self.pairing_config is None:
-            del result["pairing_config"]
+            del result['pairing_config']
         else:
-            result["pairing_config"] = self.pairing_config.to_dict()
+            result['pairing_config'] = self.pairing_config.to_dict()
 
         if self.max_distance_mm is None:
-            del result["max_distance_mm"]
+            del result['max_distance_mm']
+
+        if self.min_distance_mm is None:
+            del result["min_distance_mm"]
 
         return result
 
@@ -305,9 +357,12 @@ class PublishConfig:
     These configurations correspond to PublishConfig in the Android documentation:
     https://developer.android.com/reference/android/net/wifi/aware/PublishConfig
     """
+
     publish_type: PublishType
     service_specific_info: bytes = WifiAwareTestConstants.PUB_SSI
-    match_filter: list[bytes] | None = (WifiAwareTestConstants.MATCH_FILTER_BYTES, )
+    match_filter: list[bytes] | None = (
+        WifiAwareTestConstants.MATCH_FILTER_BYTES,
+    )
     ranging_enabled: bool = False
     terminate_notification_enabled: bool = True
     pairing_config: AwarePairingConfig | None = None
@@ -318,17 +373,21 @@ class PublishConfig:
     ) -> dict:
         """Convert PublishConfig to dict."""
         result = dataclasses.asdict(self)
-        result["publish_type"] = self.publish_type.value
-        result["service_specific_info"] = self.service_specific_info.decode("utf-8")
+        result['publish_type'] = self.publish_type.value
+        result['service_specific_info'] = self.service_specific_info.decode(
+            'utf-8'
+        )
         if self.match_filter is None:
-            del result["match_filter"]
+            del result['match_filter']
         else:
-            result["match_filter"] = [mf.decode("utf-8") for mf in self.match_filter]
+            result['match_filter'] = [
+                mf.decode('utf-8') for mf in self.match_filter
+            ]
 
         if self.pairing_config is None:
-            del result["pairing_config"]
+            del result['pairing_config']
         else:
-            result["pairing_config"] = self.pairing_config.to_dict()
+            result['pairing_config'] = self.pairing_config.to_dict()
         return result
 
 
@@ -369,6 +428,7 @@ class NetworkCapabilities:
 
         https://developer.android.com/reference/android/net/NetworkCapabilities#TRANSPORT_CELLULAR
         """
+
         TRANSPORT_CELLULAR = 0
         TRANSPORT_WIFI = 1
         TRANSPORT_BLUETOOTH = 2
@@ -382,6 +442,7 @@ class NetworkCapabilities:
 
         https://developer.android.com/reference/android/net/NetworkCapabilities#NET_CAPABILITY_MMS
         """
+
         NET_CAPABILITY_MMS = 0
         NET_CAPABILITY_SUPL = 1
         NET_CAPABILITY_DUN = 2
@@ -426,15 +487,16 @@ class NetworkRequest:
 
     https://developer.android.com/reference/android/net/NetworkRequest
     """
+
     transport_type: NetworkCapabilities.Transport
     network_specifier_parcel: str
 
     def to_dict(self) -> dict:
         result = dataclasses.asdict(self)
         if not self.network_specifier_parcel:
-            del result["network_specifier_parcel"]
+            del result['network_specifier_parcel']
         if self.transport_type:
-            result["transport_type"] = self.transport_type.value
+            result['transport_type'] = self.transport_type.value
         return result
 
 
@@ -443,6 +505,7 @@ class Characteristics(enum.IntEnum):
 
     https://developer.android.com/reference/android/net/wifi/aware/Characteristics
     """
+
     WIFI_AWARE_CIPHER_SUITE_NCS_SK_128 = 1
 
 
@@ -452,17 +515,20 @@ class WifiAwareDataPathSecurityConfig:
 
     https://developer.android.com/reference/android/net/wifi/aware/WifiAwareNetworkSpecifier
     """
+
     pmk: str | None = None
-    cipher_suite: Characteristics | None = Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_SK_128
+    cipher_suite: Characteristics | None = (
+        Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_SK_128
+    )
 
     def to_dict(self) -> dict:
         result = dataclasses.asdict(self)
         if not self.pmk:
-            del result["pmk"]
+            del result['pmk']
         if not self.cipher_suite:
-            del result["cipher_suite"]
+            del result['cipher_suite']
         else:
-            result["cipher_suite"] = self.cipher_suite.value
+            result['cipher_suite'] = self.cipher_suite.value
         return result
 
 
@@ -472,6 +538,7 @@ class WifiAwareNetworkSpecifier:
 
     https://developer.android.com/reference/android/net/wifi/aware/WifiAwareNetworkSpecifier
     """
+
     psk_passphrase: str | None = None
     port: int | None = None
     transport_protocol: int | None = None
@@ -482,33 +549,36 @@ class WifiAwareNetworkSpecifier:
     def to_dict(self) -> dict:
         result = dataclasses.asdict(self)
         if not self.psk_passphrase:
-            del result["psk_passphrase"]
+            del result['psk_passphrase']
         if not self.port:
-            del result["port"]
+            del result['port']
         if not self.transport_protocol:
-            del result["transport_protocol"]
+            del result['transport_protocol']
         if not self.pmk:
-            del result["pmk"]
+            del result['pmk']
         if not self.data_path_security_config:
-            del result["data_path_security_config"]
+            del result['data_path_security_config']
         else:
-            result["data_path_security_config"] = self.data_path_security_config.to_dict()
+            result['data_path_security_config'] = (
+                self.data_path_security_config.to_dict()
+            )
         if not self.channel_frequency_m_hz:
-            del result["channel_frequency_m_hz"]
+            del result['channel_frequency_m_hz']
         return result
 
 
 class SnippetEventNames:
     """Represents event names for Wi-Fi Aware snippet operations."""
 
-    SERVER_SOCKET_ACCEPT = "ServerSocketAccept"
+    SERVER_SOCKET_ACCEPT = 'ServerSocketAccept'
 
 
 class SnippetEventParams:
     """Represents parameters for Wi-Fi Aware snippet events."""
-    IS_ACCEPT = "isAccept"
-    ERROR = "error"
-    LOCAL_PORT = "localPort"
+
+    IS_ACCEPT = 'isAccept'
+    ERROR = 'error'
+    LOCAL_PORT = 'localPort'
 
 
 @enum.unique
@@ -517,6 +587,7 @@ class AttachCallBackMethodType(enum.StrEnum):
 
     https://developer.android.com/reference/android/net/wifi/aware/AttachCallback
     """
+
     ATTACHED = 'onAttached'
     ATTACH_FAILED = 'onAttachFailed'
     AWARE_SESSION_TERMINATED = 'onAwareSessionTerminated'
@@ -525,16 +596,16 @@ class AttachCallBackMethodType(enum.StrEnum):
 
 @enum.unique
 class WifiAwareBroadcast(enum.StrEnum):
-    WIFI_AWARE_AVAILABLE = "WifiAwareStateAvailable"
-    WIFI_AWARE_NOT_AVAILABLE = "WifiAwareStateNotAvailable"
+    WIFI_AWARE_AVAILABLE = 'WifiAwareStateAvailable'
+    WIFI_AWARE_NOT_AVAILABLE = 'WifiAwareStateNotAvailable'
 
 
 @enum.unique
 class DeviceidleState(enum.StrEnum):
-    ACTIVE = "ACTIVE"
-    IDLE = "IDLE"
-    INACTIVE = "INACTIVE"
-    OVERRIDE = "OVERRIDE"
+    ACTIVE = 'ACTIVE'
+    IDLE = 'IDLE'
+    INACTIVE = 'INACTIVE'
+    OVERRIDE = 'OVERRIDE'
 
 
 @enum.unique
@@ -548,10 +619,25 @@ class Operator(enum.Enum):
     LESS = operator.lt
     LESS_EQUAL = operator.le
 
+
 @enum.unique
 class AndroidVersion(enum.IntEnum):
-  """Android OS version."""
-  R = 11
-  S = 12
-  T = 13
-  U = 14
+    """Android OS version."""
+
+    R = 11
+    S = 12
+    T = 13
+    U = 14
+
+
+@enum.unique
+class CountryCode(enum.StrEnum):
+    """Country Code abbreviation."""
+    AUSTRALIA = 'AU'
+    CHINA = 'CN'
+    GERMANY = 'DE'
+    JAPAN = 'JP'
+    UK = 'GB'
+    US = 'US'
+    UNKNOWN = 'UNKNOWN'
+

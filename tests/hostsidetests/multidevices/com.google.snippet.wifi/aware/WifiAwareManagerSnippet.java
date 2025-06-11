@@ -16,12 +16,14 @@
 
 package com.google.snippet.wifi.aware;
 
+import android.app.UiAutomation;
 import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.net.NetworkSpecifier;
 import android.net.MacAddress;
 import android.net.wifi.aware.AttachCallback;
 import android.net.wifi.aware.Characteristics;
@@ -41,12 +43,20 @@ import android.net.wifi.rtt.RangingRequest;
 import android.net.wifi.rtt.RangingResult;
 import android.net.wifi.rtt.RangingResultCallback;
 import android.net.wifi.rtt.WifiRttManager;
+import android.net.wifi.ScanResult;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.text.TextUtils;
+import android.util.Base64;
+
+import android.os.RemoteException;
 
 import androidx.annotation.NonNull;
 import androidx.test.core.app.ApplicationProvider;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.google.android.mobly.snippet.Snippet;
 import com.google.android.mobly.snippet.event.EventCache;
@@ -56,11 +66,15 @@ import com.google.android.mobly.snippet.rpc.Rpc;
 import com.google.android.mobly.snippet.rpc.RpcOptional;
 import com.google.android.mobly.snippet.util.Log;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -70,6 +84,7 @@ public class WifiAwareManagerSnippet implements Snippet {
     private final Context mContext;
     private final WifiAwareManager mWifiAwareManager;
     private final WifiRttManager mWifiRttManager;
+    private final WifiManager mWifiManager;
     private final Handler mHandler;
     // WifiAwareSession will be initialized after attach.
     private final ConcurrentHashMap<String, WifiAwareSession> mAttachSessions =
@@ -100,9 +115,37 @@ public class WifiAwareManagerSnippet implements Snippet {
         mWifiAwareManager = mContext.getSystemService(WifiAwareManager.class);
         checkWifiAwareManager();
         mWifiRttManager = mContext.getSystemService(WifiRttManager.class);
+        mWifiManager = mContext.getSystemService(WifiManager.class);
         HandlerThread handlerThread = new HandlerThread("Snippet-Aware");
         handlerThread.start();
         mHandler = new Handler(handlerThread.getLooper());
+    }
+    private void adoptShellPermission() throws RemoteException {
+        UiAutomation uia = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        uia.adoptShellPermissionIdentity();
+    }
+
+    private void dropShellPermission() throws RemoteException {
+        UiAutomation uia = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        uia.dropShellPermissionIdentity();
+    }
+
+    /**
+     * Returns the MAC address of the currently active access point.
+     */
+    @Rpc(description = "Returns information about the currently active access point.")
+    public String wifiGetActiveNetworkMacAddress() throws Exception {
+        WifiInfo info = null;
+        try {
+            adoptShellPermission();
+            info = mWifiManager.getConnectionInfo();
+        } catch (RemoteException e) {
+            Log.e("RemoteException message: " + e);
+        } finally {
+            // cleanup
+            dropShellPermission();
+        }
+        return info.getMacAddress();
     }
 
     /**
@@ -309,6 +352,10 @@ public class WifiAwareManagerSnippet implements Snippet {
     /**
      * Checks if Wi-Fi RTT is available.
      */
+    @Rpc(description = "Check if Wi-Fi Aware is available")
+    public Boolean wifiRttIsAvailable() {
+        return mWifiRttManager.isAvailable();
+    }
     private void checkWifiRttAvailable() throws WifiAwareManagerSnippetException {
         if (!mWifiRttManager.isAvailable()) {
             throw new WifiAwareManagerSnippetException("WiFi RTT is not available now.");
@@ -661,11 +708,14 @@ public class WifiAwareManagerSnippet implements Snippet {
                     + "request"
     )
     public String wifiAwareCreateNetworkSpecifier(
-            String discoverySessionId, int peerId, boolean isAcceptAnyPeer,
+            String discoverySessionId, Integer peerId, boolean isAcceptAnyPeer,
             @RpcOptional JSONObject jsonObject
     ) throws JSONException, WifiAwareManagerSnippetException {
         DiscoverySession session = getDiscoverySession(discoverySessionId);
-        PeerHandle handle = getPeerHandler(peerId);
+        PeerHandle handle = null;
+        if (peerId != null && peerId > 0){
+            handle = getPeerHandler(peerId);
+        }
         WifiAwareNetworkSpecifier.Builder builder;
         if (isAcceptAnyPeer) {
             builder = new WifiAwareNetworkSpecifier.Builder((PublishDiscoverySession) session);
@@ -675,6 +725,48 @@ public class WifiAwareManagerSnippet implements Snippet {
         WifiAwareNetworkSpecifier specifier =
                 WifiAwareJsonDeserializer.jsonToNetworkSpecifier(jsonObject, builder);
         return SerializationUtil.parcelableToString(specifier);
+    }
+
+    /**
+     * Creates a oob NetworkSpecifier for requesting a Wi-Fi Aware network via ConnectivityManager.
+     *
+     * @param sessionId The Id of the AwareSession session,
+     * @param role             The role of this device: AwareDatapath Role.
+     * @param macAddress    The MAC address of the peer's Aware discovery interface.
+     * @return A {@link NetworkSpecifier}  to be used to construct
+     * @throws WifiAwareManagerSnippetException if there is an error creating the network
+     *                                          specifier.
+     */
+    @Rpc(
+            description = "Create a oob network specifier to be used when specifying a Aware "
+                    + "network request"
+    )
+    public NetworkSpecifier createNetworkSpecifierOob(String sessionId, int role, String macAddress,
+        String passphrase, String pmk)
+            throws WifiAwareManagerSnippetException {
+            WifiAwareSession session = getWifiAwareSession(sessionId);
+             NetworkSpecifier specifier = null;
+            byte[] peermac = null;
+            byte[] pmkDecoded = null;
+            if (!TextUtils.isEmpty(pmk)){
+                pmkDecoded = Base64.decode(pmk, Base64.DEFAULT);
+            }
+            if (macAddress != null) {
+                peermac = MacAddress.fromString(macAddress).toByteArray();
+            }
+            if (passphrase != null && !passphrase.isEmpty()) {
+                specifier = session.createNetworkSpecifierPassphrase(role, peermac, passphrase);
+            }
+            else if (pmk != null) {
+                specifier = session.createNetworkSpecifierPmk(role, peermac, pmkDecoded);
+            }
+            else if (peermac != null){
+                specifier = session.createNetworkSpecifierOpen(role, peermac);
+            } else {
+            throw new WifiAwareManagerSnippetException(
+                "At least one of passphrase, or macAddress must be provided.");
+            }
+            return specifier;
     }
 
     @Override
@@ -750,6 +842,98 @@ public class WifiAwareManagerSnippet implements Snippet {
     }
 
     /**
+     * Converts a JSON representation of a ScanResult to an actual ScanResult object. Mirror of
+     * the code in
+     * {@link com.googlecode.android_scripting.jsonrpc.JsonBuilder#buildJsonScanResult(ScanResult)}.
+     *
+     * @param j JSON object representing a ScanResult.
+     * @return a ScanResult object
+     * @throws JSONException on any JSON errors
+     */
+    public static ScanResult getScanResult(JSONObject j) throws JSONException {
+        if (j == null) {
+            return null;
+        }
+
+        ScanResult scanResult = new ScanResult();
+
+        if (j.has("BSSID")) {
+            scanResult.BSSID = j.getString("BSSID");
+        }
+        if (j.has("SSID")) {
+            scanResult.SSID = j.getString("SSID");
+        }
+        if (j.has("frequency")) {
+            scanResult.frequency = j.getInt("frequency");
+        }
+        if (j.has("level")) {
+            scanResult.level = j.getInt("level");
+        }
+        if (j.has("capabilities")) {
+            scanResult.capabilities = j.getString("capabilities");
+        }
+        if (j.has("timestamp")) {
+            scanResult.timestamp = j.getLong("timestamp");
+        }
+        if (j.has("centerFreq0")) {
+            scanResult.centerFreq0 = j.getInt("centerFreq0");
+        }
+        if (j.has("centerFreq1")) {
+            scanResult.centerFreq1 = j.getInt("centerFreq1");
+        }
+        if (j.has("channelWidth")) {
+            scanResult.channelWidth = j.getInt("channelWidth");
+        }
+        if (j.has("operatorFriendlyName")) {
+            scanResult.operatorFriendlyName = j.getString("operatorFriendlyName");
+        }
+        if (j.has("venueName")) {
+            scanResult.venueName = j.getString("venueName");
+        }
+
+        return scanResult;
+    }
+
+    /**
+     * Converts a JSONArray toa a list of ScanResult.
+     *
+     * @param j JSONArray representing a collection of ScanResult objects
+     * @return a list of ScanResult objects
+     * @throws JSONException on any JSON error
+     */
+    public static List<ScanResult> getScanResults(JSONArray j) throws JSONException {
+        if (j == null || j.length() == 0) {
+            return null;
+        }
+
+        ArrayList<ScanResult> scanResults = new ArrayList<>(j.length());
+        for (int i = 0; i < j.length(); ++i) {
+            scanResults.add(getScanResult(j.getJSONObject(i)));
+        }
+
+        return scanResults;
+    }
+
+    /**
+     * Starts Wi-Fi RTT ranging with Wi-Fi Aware access points.
+     *
+     * @param callbackId        Assigned automatically by mobly for all async RPCs.
+     * @param requestJsonObject The ranging request in JSONArray type for calling {@link
+     *                          android.net.wifi.ScanResult}.
+     */
+    @AsyncRpc(description = "Start ranging to an Access Points.")
+    public void wifiRttStartRangingToAccessPoints(
+            String callbackId, JSONArray requestJsonObject
+    ) throws JSONException, WifiAwareManagerSnippetException {
+        Log.v("wifiRttStartRangingToAccessPoints: " + requestJsonObject);
+        RangingRequest request = new RangingRequest.Builder().addAccessPoints(
+                            getScanResults(requestJsonObject)).build();
+        Log.v("Starting Wi-Fi RTT ranging with access point: " + request.toString());
+        RangingCallback rangingCb = new RangingCallback(eventCache, callbackId);
+        mWifiRttManager.startRanging(request, command -> mHandler.post(command), rangingCb);
+    }
+
+    /**
      * Starts Wi-Fi RTT ranging with Wi-Fi Aware peers.
      *
      * @param callbackId        Assigned automatically by mobly for all async RPCs.
@@ -786,7 +970,7 @@ public class WifiAwareManagerSnippet implements Snippet {
         public void onRangingFailure(int code) {
             SnippetEvent event = new SnippetEvent(mCallbackId, EVENT_NAME_RANGING_RESULT);
             event.getData().putString("callbackName", "onRangingFailure");
-            event.getData().putInt("statusCode", code);
+            event.getData().putInt("status", code);
             mEventCache.postEvent(event);
         }
 
@@ -800,8 +984,20 @@ public class WifiAwareManagerSnippet implements Snippet {
                 RangingResult result = results.get(i);
                 resultBundles[i] = new Bundle();
                 resultBundles[i].putInt("status", result.getStatus());
-                resultBundles[i].putInt("distanceMm", result.getDistanceMm());
-                resultBundles[i].putInt("rssi", result.getRssi());
+                if (result.getStatus() == RangingResult.STATUS_SUCCESS) {
+                    resultBundles[i].putInt("distanceMm", result.getDistanceMm());
+                    resultBundles[i].putInt("rssi", result.getRssi());
+                    resultBundles[i].putInt("distanceStdDevMm", result.getDistanceStdDevMm());
+                    resultBundles[i].putInt(
+                        "numAttemptedMeasurements",
+                        result.getNumAttemptedMeasurements());
+                    resultBundles[i].putInt(
+                        "numSuccessfulMeasurements",
+                        result.getNumSuccessfulMeasurements());
+                    resultBundles[i].putByteArray("lci", result.getLci());
+                    resultBundles[i].putByteArray("lcr", result.getLcr());
+                    resultBundles[i].putLong("timestamp", result.getRangingTimestampMillis());
+                }
                 PeerHandle peer = result.getPeerHandle();
                 if (peer != null) {
                     resultBundles[i].putInt("peerId", peer.hashCode());
@@ -810,6 +1006,8 @@ public class WifiAwareManagerSnippet implements Snippet {
                 }
                 MacAddress mac = result.getMacAddress();
                 resultBundles[i].putString("mac", mac != null ? mac.toString() : null);
+                resultBundles[i].putString("macAsString",
+                    mac != null ? result.getMacAddress().toString() : null);
             }
             event.getData().putParcelableArray("results", resultBundles);
             mEventCache.postEvent(event);

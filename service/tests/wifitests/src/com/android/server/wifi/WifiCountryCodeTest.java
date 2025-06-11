@@ -338,19 +338,20 @@ public class WifiCountryCodeTest extends WifiBaseTest {
         // Wifi get L2 connected.
         mClientModeImplListenerCaptor.getValue().onConnectionStart(mClientModeManager);
 
-        // Wifi Calling is available
-        when(mWifiCarrierInfoManager.isWifiCallingAvailable()).thenReturn(true);
-        // Telephony country code arrives.
-        mWifiCountryCode.setTelephonyCountryCodeAndUpdate(mTelephonyCountryCode);
-        // Telephony country code won't be applied at this time.
-        assertEquals("00", mWifiCountryCode.getCurrentDriverCountryCode());
-        verify(mWifiP2pMetrics).setIsCountryCodeWorldMode(true);
-        // Wifi is not forced to disconnect
-        verify(mClientModeManager, times(0)).disconnect();
+        if (mCallingSupported) {
+            // Wifi Calling is available
+            when(mWifiCarrierInfoManager.isWifiCallingAvailable()).thenReturn(true);
+            // Telephony country code arrives.
+            mWifiCountryCode.setTelephonyCountryCodeAndUpdate(mTelephonyCountryCode);
+            // Telephony country code won't be applied at this time.
+            assertEquals("00", mWifiCountryCode.getCurrentDriverCountryCode());
+            verify(mWifiP2pMetrics).setIsCountryCodeWorldMode(true);
+            verify(mClientModeManager, never()).disconnect();
+        }
 
+        // Test wifi traffic is high.
         // Wifi Calling is not available
         when(mWifiCarrierInfoManager.isWifiCallingAvailable()).thenReturn(false);
-        // Wifi traffic is high
         when(mWifiInfo.getSuccessfulTxPacketsPerSecond()).thenReturn(20.0);
         // Telephony country code arrives.
         mWifiCountryCode.setTelephonyCountryCodeAndUpdate(mTelephonyCountryCode);
@@ -358,9 +359,9 @@ public class WifiCountryCodeTest extends WifiBaseTest {
         assertEquals("00", mWifiCountryCode.getCurrentDriverCountryCode());
         verify(mWifiP2pMetrics).setIsCountryCodeWorldMode(true);
         // Wifi is not forced to disconnect
-        verify(mClientModeManager, times(0)).disconnect();
+        verify(mClientModeManager, never()).disconnect();
 
-        // Wifi traffic is low
+        // Wifi traffic is low (And no wifi calling)
         when(mWifiInfo.getSuccessfulTxPacketsPerSecond()).thenReturn(10.0);
         // Telephony country code arrives for multiple times
         for (int i = 0; i < 3; i++) {
@@ -368,10 +369,8 @@ public class WifiCountryCodeTest extends WifiBaseTest {
         }
         // Telephony country code still won't be applied.
         assertEquals("00", mWifiCountryCode.getCurrentDriverCountryCode());
-        if (mCallingSupported) {
-            // Wifi is forced to disconnect
-            verify(mClientModeManager, times(1)).disconnect();
-        }
+        // Wifi is forced to disconnect
+        verify(mClientModeManager, times(1)).disconnect();
 
         mClientModeImplListenerCaptor.getValue().onConnectionEnd(mClientModeManager);
         // Telephony country is applied after supplicant is ready.

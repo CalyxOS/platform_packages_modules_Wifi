@@ -22,6 +22,8 @@ import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.Context;
+import android.net.wifi.ScanResult;
+import android.net.wifi.WifiAnnotations;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager.DeviceMobilityState;
 import android.os.Handler;
@@ -84,6 +86,7 @@ public class WifiDataStall {
     private boolean mPhoneStateListenerEnabled = false;
     private int mTxTputKbps = INVALID_THROUGHPUT;
     private int mRxTputKbps = INVALID_THROUGHPUT;
+    private @WifiAnnotations.ChannelWidth int mChannelBandwidth = ScanResult.UNSPECIFIED;
 
     /** @hide */
     @IntDef(prefix = { "CELLULAR_DATA_" }, value = {
@@ -205,6 +208,7 @@ public class WifiDataStall {
         mIsThroughputSufficient = true;
         mTxTputKbps = INVALID_THROUGHPUT;
         mRxTputKbps = INVALID_THROUGHPUT;
+        mChannelBandwidth = ScanResult.UNSPECIFIED;
     }
 
     private void createTelephonyManagerForDefaultDataSubIfNeeded() {
@@ -482,12 +486,16 @@ public class WifiDataStall {
         mIsThroughputSufficient = isThroughputSufficientInternal(mTxTputKbps, mRxTputKbps,
                 isTxTrafficHigh, isRxTrafficHigh, timeDeltaLastTwoPollsMs, txBytes, rxBytes);
 
+        mChannelBandwidth = connectionCapabilities != null
+                ? mChannelBandwidth = connectionCapabilities.channelBandwidth
+                : ScanResult.UNSPECIFIED;
+
         int maxTimeDeltaMs = mWifiGlobals.getPollRssiIntervalMillis()
                 + MAX_TIME_MARGIN_LAST_TWO_POLLS_MS;
         if (timeDeltaLastTwoPollsMs > 0 && timeDeltaLastTwoPollsMs <= maxTimeDeltaMs) {
             mWifiMetrics.incrementConnectionDuration(ifaceName, timeDeltaLastTwoPollsMs,
                     mIsThroughputSufficient, mIsCellularDataAvailable, wifiInfo.getRssi(),
-                    mTxTputKbps, mRxTputKbps);
+                    mTxTputKbps, mRxTputKbps, txLinkSpeedMbps, rxLinkSpeedMbps, mChannelBandwidth);
         }
 
         boolean possibleDataStallTx = isTxTputLow

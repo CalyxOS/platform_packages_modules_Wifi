@@ -67,11 +67,13 @@ public class WifiResourceCache {
             String resourceName = mContext.getResources().getResourceEntryName(resourceId);
             if (mResourceNameMap.containsKey(resourceName)) {
                 int tempId = mResourceNameMap.get(resourceName);
-                boolean value = mBooleanResourceMap.get(tempId);
-                mBooleanResourceMap.put(resourceId, value);
-                mBooleanResourceMap.remove(tempId);
-                mResourceNameMap.put(resourceName, resourceId);
-                return value;
+                if (mBooleanResourceMap.containsKey(tempId)) {
+                    boolean value = mBooleanResourceMap.get(tempId);
+                    mBooleanResourceMap.put(resourceId, value);
+                    mBooleanResourceMap.remove(tempId);
+                    mResourceNameMap.put(resourceName, resourceId);
+                    return value;
+                }
             }
             mResourceNameMap.put(resourceName, resourceId);
             return mBooleanResourceMap.computeIfAbsent(resourceId,
@@ -91,11 +93,13 @@ public class WifiResourceCache {
             String resourceName = mContext.getResources().getResourceEntryName(resourceId);
             if (mResourceNameMap.containsKey(resourceName)) {
                 int tempId = mResourceNameMap.get(resourceName);
-                int value = mIntegerResourceMap.get(tempId);
-                mIntegerResourceMap.put(resourceId, value);
-                mIntegerResourceMap.remove(tempId);
-                mResourceNameMap.put(resourceName, resourceId);
-                return value;
+                if (mIntegerResourceMap.containsKey(tempId)) {
+                    int value = mIntegerResourceMap.get(tempId);
+                    mIntegerResourceMap.put(resourceId, value);
+                    mIntegerResourceMap.remove(tempId);
+                    mResourceNameMap.put(resourceName, resourceId);
+                    return value;
+                }
             }
             mResourceNameMap.put(resourceName, resourceId);
             return mIntegerResourceMap.computeIfAbsent(resourceId,
@@ -115,11 +119,13 @@ public class WifiResourceCache {
             String resourceName = mContext.getResources().getResourceEntryName(resourceId);
             if (mResourceNameMap.containsKey(resourceName)) {
                 int tempId = mResourceNameMap.get(resourceName);
-                String value = mStringResourceMap.get(tempId);
-                mStringResourceMap.put(resourceId, value);
-                mStringResourceMap.remove(tempId);
-                mResourceNameMap.put(resourceName, resourceId);
-                return value;
+                if (mStringResourceMap.containsKey(tempId)) {
+                    String value = mStringResourceMap.get(tempId);
+                    mStringResourceMap.put(resourceId, value);
+                    mStringResourceMap.remove(tempId);
+                    mResourceNameMap.put(resourceName, resourceId);
+                    return value;
+                }
             }
             mResourceNameMap.put(resourceName, resourceId);
             return mStringResourceMap.computeIfAbsent(resourceId,
@@ -139,11 +145,13 @@ public class WifiResourceCache {
             String resourceName = mContext.getResources().getResourceEntryName(resourceId);
             if (mResourceNameMap.containsKey(resourceName)) {
                 int tempId = mResourceNameMap.get(resourceName);
-                String[] value = mStringArrayResourceMap.get(tempId);
-                mStringArrayResourceMap.put(resourceId, value);
-                mStringArrayResourceMap.remove(tempId);
-                mResourceNameMap.put(resourceName, resourceId);
-                return value;
+                if (mStringArrayResourceMap.containsKey(tempId)) {
+                    String[] value = mStringArrayResourceMap.get(tempId);
+                    mStringArrayResourceMap.put(resourceId, value);
+                    mStringArrayResourceMap.remove(tempId);
+                    mResourceNameMap.put(resourceName, resourceId);
+                    return value;
+                }
             }
             mResourceNameMap.put(resourceName, resourceId);
             return mStringArrayResourceMap.computeIfAbsent(resourceId,
@@ -163,11 +171,13 @@ public class WifiResourceCache {
             String resourceName = mContext.getResources().getResourceEntryName(resourceId);
             if (mResourceNameMap.containsKey(resourceName)) {
                 int tempId = mResourceNameMap.get(resourceName);
-                int[] value = mIntArrayResourceMap.get(tempId);
-                mIntArrayResourceMap.put(resourceId, value);
-                mIntArrayResourceMap.remove(tempId);
-                mResourceNameMap.put(resourceName, resourceId);
-                return value;
+                if (mIntArrayResourceMap.containsKey(tempId)) {
+                    int[] value = mIntArrayResourceMap.get(tempId);
+                    mIntArrayResourceMap.put(resourceId, value);
+                    mIntArrayResourceMap.remove(tempId);
+                    mResourceNameMap.put(resourceName, resourceId);
+                    return value;
+                }
             }
             mResourceNameMap.put(resourceName, resourceId);
             return mIntArrayResourceMap.computeIfAbsent(resourceId,
@@ -318,5 +328,13 @@ public class WifiResourceCache {
             }
             mResourceNameMap.clear();
         }
+    }
+
+    /**
+     * Handle the locale change to apply the translation
+     */
+    public void handleLocaleChange() {
+        mStringResourceMap.clear();
+        mStringArrayResourceMap.clear();
     }
 }

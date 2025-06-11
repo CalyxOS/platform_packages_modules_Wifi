@@ -14,20 +14,30 @@
  * limitations under the License.
  */
 
-package android.net.wifi.usd;
+package android.system.wifi.mainline_supplicant;
 
 /**
- * Interface for USD availability callback.
- *
- * @hide
+ * Information for sending a USD message.
  */
-oneway interface IAvailabilityCallback {
+parcelable UsdMessageInfo {
     /**
-     * Called when subscriber is available
+     * Identifier for this device, retrieved from |ServiceDiscoveryInfo|.
      */
-    void onSubscriberAvailable();
+    int ownId;
+
     /**
-     * Called when publisher is available
+     * Identifier for the peer device, retrieved from |ServiceDiscoveryInfo|.
      */
-    void onPublisherAvailable();
+    int peerId;
+
+    /**
+     * MAC address for the peer device.
+     */
+    byte[6] peerMacAddress;
+
+    /**
+     * Message contents. Note that the maximum message length is
+     * |UsdCapabilities.maxLocalSsiLengthBytes|.
+     */
+    byte[] message;
 }

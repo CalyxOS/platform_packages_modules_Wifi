@@ -100,50 +100,75 @@ public final class SubscribeConfig implements Parcelable {
     @Retention(RetentionPolicy.SOURCE)
     public @interface PeriodicRangingInterval {
     }
-    /* Ranging is not repeated */
-    /** @hide */
+
+    /**
+     * Ranging is not repeated
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_NONE = 0;
 
-    /* Ranging interval is 128TU [= (128 * 1024) / 1000 = 131.072 ms] */
-    /** @hide */
+    /**
+     * Ranging interval is 128TU [= (128 * 1024) / 1000 = 131.072 ms]
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_128TU = 128;
 
-    /* Ranging interval is 256TU [= (256 * 1024) / 1000 = 262.144 ms] */
-    /** @hide */
+    /**
+     * Ranging interval is 256TU [= (256 * 1024) / 1000 = 262.144 ms]
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_256TU = 256;
 
-    /* Ranging interval is 512TU [= (512 * 1024) / 1000 = 524.288 ms] */
-    /** @hide */
+    /**
+     * Ranging interval is 512TU [= (512 * 1024) / 1000 = 524.288 ms]
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_512TU = 512;
 
-    /* Ranging interval is 1024TU [= (1024 * 1024) / 1000 = 1048.576 ms] */
-    /** @hide */
+    /**
+     * Ranging interval is 1024TU [= (1024 * 1024) / 1000 = 1048.576 ms]
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_1024TU = 1024;
 
-    /* Ranging interval is 2048TU [= (2048 * 1024) / 1000 = 2097.152 ms] */
-    /** @hide */
+    /**
+     * Ranging interval is 2048TU [= (2048 * 1024) / 1000 = 2097.152 ms]
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_2048TU = 2048;
 
-    /* Ranging interval is 4096TU [= (4096 * 1024) / 1000 = 4194.304 ms] */
-    /** @hide */
+    /**
+     * Ranging interval is 4096TU [= (4096 * 1024) / 1000 = 4194.304 ms]
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_4096TU = 4096;
 
-    /* Ranging interval is 8192TU [= (8192 * 1024) / 1000 = 8388.608 ms] */
-    /** @hide */
+    /**
+     * Ranging interval is 8192TU [= (8192 * 1024) / 1000 = 8388.608 ms]
+     *
+     * @hide
+     */
     @FlaggedApi(FLAG_RANGING_RTT_ENABLED)
     @SystemApi
     public static final int PERIODIC_RANGING_INTERVAL_8192TU = 8192;
@@ -481,10 +506,6 @@ public final class SubscribeConfig implements Parcelable {
         }
         if (mMaxDistanceMmSet && mMaxDistanceMm < 0) {
             throw new IllegalArgumentException("Maximum distance must be non-negative");
-        }
-        if (mMinDistanceMmSet && mMaxDistanceMmSet && mMaxDistanceMm <= mMinDistanceMm) {
-            throw new IllegalArgumentException(
-                    "Maximum distance must be greater than minimum distance");
         }
 
         if (mPeriodicRangingEnabled && (mMinDistanceMmSet || mMaxDistanceMmSet)) {
@@ -861,6 +882,10 @@ public final class SubscribeConfig implements Parcelable {
          * <p>
          * The device must support Wi-Fi RTT for this feature to be used. Feature support is checked
          * as described in {@link android.net.wifi.rtt}.
+         * <p>
+         * Note: The minimum distance is same as outer threshold of egress geofence. This can be
+         * more than {@link #setMaxDistanceMm(int)} which is same as inner threshold of ingress
+         * geofence i.e. discovery with  distance <= max or distance >= min.
          *
          * @param minDistanceMm Minimum distance, in mm, to the publisher above which to trigger
          *                      discovery.
@@ -896,6 +921,10 @@ public final class SubscribeConfig implements Parcelable {
          * <p>
          * The device must support Wi-Fi RTT for this feature to be used. Feature support is checked
          * as described in {@link android.net.wifi.rtt}.
+         * <p>
+         * Note: The maximum distance is same as inner threshold of ingress geofence. This can be
+         * less than {@link #setMinDistanceMm(int)} which is same as outer threshold of egress
+         * geofence i.e. discovery with  distance <= max or distance >= min.
          *
          * @param maxDistanceMm Maximum distance, in mm, to the publisher below which to trigger
          *                      discovery.

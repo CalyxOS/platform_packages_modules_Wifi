@@ -29,6 +29,7 @@ import android.security.advancedprotection.AdvancedProtectionManager;
 import android.text.TextUtils;
 import android.util.ArraySet;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.HandlerExecutor;
 import com.android.wifi.flags.FeatureFlags;
 
@@ -98,7 +99,8 @@ public class WifiDeviceStateChangeManager {
                 },
                 filter);
         handleScreenStateChanged(mPowerManager.isInteractive());
-        if (Environment.isSdkAtLeastB() && mFeatureFlags.wepDisabledInApm() && Flags.aapmApi()) {
+        if (Environment.isSdkAtLeastB() && mFeatureFlags.wepDisabledInApm()
+                && isAapmApiFlagEnabled()) {
             mAdvancedProtectionManager =
                     mContext.getSystemService(AdvancedProtectionManager.class);
             if (mAdvancedProtectionManager != null) {
@@ -118,6 +120,10 @@ public class WifiDeviceStateChangeManager {
         mIsWifiServiceStarted = true;
     }
 
+    @VisibleForTesting
+    public boolean isAapmApiFlagEnabled() {
+        return Flags.aapmApi();
+    }
     /**
      * Register a state change callback. When the state is changed, caller with receive the callback
      * event

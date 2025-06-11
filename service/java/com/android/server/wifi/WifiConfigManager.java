@@ -64,6 +64,8 @@ import android.util.LocalLog;
 import android.util.Log;
 import android.util.Pair;
 
+import androidx.annotation.Keep;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.MacAddressUtils;
@@ -815,10 +817,36 @@ public class WifiConfigManager {
     }
 
     /**
+     * Retrieves the  configured network corresponding to the provided SSID and security type. The
+     * WifiConfiguration object will have the password in plain text.
+     *
+     * WARNING: Don't use this to pass network configurations to external apps. Should only be
+     * sent to system apps/wifi stack, when there is a need for passwords in plaintext.
+     *
+     * @param ssid SSID of the requested network.
+     * @param securityType  security type of the requested network.
+     * @return WifiConfiguration object if found, null otherwise.
+     */
+    public @Nullable WifiConfiguration getConfiguredNetworkWithPassword(@NonNull WifiSsid ssid,
+            @WifiConfiguration.SecurityType int securityType) {
+        List<WifiConfiguration> wifiConfigurations = getConfiguredNetworks(false, false,
+                Process.WIFI_UID);
+        for (WifiConfiguration wifiConfiguration : wifiConfigurations) {
+            // Match ssid and security type
+            if (ssid.equals(WifiSsid.fromString(wifiConfiguration.SSID))
+                    && wifiConfiguration.isSecurityType(securityType)) {
+                return new WifiConfiguration(wifiConfiguration);
+            }
+        }
+        return null;
+    }
+
+    /**
      * Retrieves the list of all configured networks with the passwords masked.
      *
      * @return List of WifiConfiguration objects representing the networks.
      */
+    @Keep
     public List<WifiConfiguration> getSavedNetworks(int targetUid) {
         return getConfiguredNetworks(true, true, targetUid);
     }
@@ -844,6 +872,7 @@ public class WifiConfigManager {
      * @param networkId networkId of the requested network.
      * @return WifiConfiguration object if found, null otherwise.
      */
+    @Keep
     public @Nullable WifiConfiguration getConfiguredNetwork(int networkId) {
         WifiConfiguration config = getInternalConfiguredNetwork(networkId);
         if (config == null) {
@@ -1450,7 +1479,7 @@ public class WifiConfigManager {
         WifiConfiguration newInternalConfig = null;
 
         BitSet supportedFeatures = mWifiInjector.getActiveModeWarden()
-                .getPrimaryClientModeManager().getSupportedFeatures();
+                .getPrimaryClientModeManager().getSupportedFeaturesBitSet();
 
         // First check if we already have a network with the provided network id or configKey.
         WifiConfiguration existingInternalConfig = getInternalConfiguredNetwork(config);
@@ -1787,6 +1816,7 @@ public class WifiConfigManager {
      * @param uid    UID of the app requesting the network addition/modification.
      * @return NetworkUpdateResult object representing status of the update.
      */
+    @Keep
     public NetworkUpdateResult addOrUpdateNetwork(WifiConfiguration config, int uid) {
         return addOrUpdateNetwork(config, uid, null, false);
     }
@@ -2193,6 +2223,7 @@ public class WifiConfigManager {
      * @param reason    reason to update the network.
      * @return true if the input configuration has been updated, false otherwise.
      */
+    @Keep
     public boolean updateNetworkSelectionStatus(int networkId, int reason) {
         WifiConfiguration config = getInternalConfiguredNetwork(networkId);
         if (config == null) {
@@ -2741,6 +2772,7 @@ public class WifiConfigManager {
      *
      * @return network Id corresponding to the last selected network.
      */
+    @Keep
     public int getLastSelectedNetwork() {
         return mLastSelectedNetworkId;
     }
@@ -2767,6 +2799,7 @@ public class WifiConfigManager {
      *
      * @return timestamp in milliseconds from boot when this was set.
      */
+    @Keep
     public long getLastSelectedTimeStamp() {
         return mLastSelectedTimeStamp;
     }
@@ -2778,6 +2811,7 @@ public class WifiConfigManager {
      * @param networkId network ID corresponding to the network.
      * @return existing {@link ScanDetailCache} entry if one exists or null.
      */
+    @Keep
     public ScanDetailCache getScanDetailCacheForNetwork(int networkId) {
         return mScanDetailCaches.get(networkId);
     }
@@ -2854,6 +2888,7 @@ public class WifiConfigManager {
      * @return WifiConfiguration object representing the network corresponding to the scanResult,
      * null if none exists.
      */
+    @Keep
     public WifiConfiguration getSavedNetworkForScanResult(@NonNull ScanResult scanResult) {
         WifiConfiguration config = null;
         try {
@@ -3565,7 +3600,7 @@ public class WifiConfigManager {
             Map<String, String> macAddressMapping) {
 
         BitSet supportedFeatures = mWifiInjector.getActiveModeWarden()
-                .getPrimaryClientModeManager().getSupportedFeatures();
+                .getPrimaryClientModeManager().getSupportedFeaturesBitSet();
 
         for (WifiConfiguration configuration : configurations) {
             if (!WifiConfigurationUtil.validate(
@@ -3604,7 +3639,7 @@ public class WifiConfigManager {
      */
     private void loadInternalDataFromUserStore(List<WifiConfiguration> configurations) {
         BitSet supportedFeatures = mWifiInjector.getActiveModeWarden()
-                .getPrimaryClientModeManager().getSupportedFeatures();
+                .getPrimaryClientModeManager().getSupportedFeaturesBitSet();
 
         for (WifiConfiguration configuration : configurations) {
             if (!WifiConfigurationUtil.validate(

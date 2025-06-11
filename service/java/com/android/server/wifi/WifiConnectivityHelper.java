@@ -64,7 +64,7 @@ public class WifiConnectivityHelper {
 
         ClientModeManager primaryManager =
                 mWifiInjector.getActiveModeWarden().getPrimaryClientModeManager();
-        BitSet fwFeatureSet = primaryManager.getSupportedFeatures();
+        BitSet fwFeatureSet = primaryManager.getSupportedFeaturesBitSet();
         Log.d(TAG, "Firmware supported feature set: " + fwFeatureSet);
 
         if (!fwFeatureSet.get(WIFI_FEATURE_CONTROL_ROAMING)) {

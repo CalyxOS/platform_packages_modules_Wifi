@@ -18,6 +18,8 @@ package com.android.server.wifi;
 
 import android.os.SystemClock;
 
+import java.time.Instant;
+
 import javax.annotation.concurrent.ThreadSafe;
 
 /**
@@ -67,5 +69,9 @@ public class Clock {
      */
     public void sleep(long ms) {
         SystemClock.sleep(ms);
+    }
+
+    public Instant getCurrentInstant() {
+        return Instant.now();
     }
 }

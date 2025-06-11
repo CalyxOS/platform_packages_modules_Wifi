@@ -27,6 +27,8 @@ import android.net.Uri;
 import android.net.wifi.WifiContext;
 import android.provider.Settings;
 
+import androidx.annotation.Keep;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.messages.nano.SystemMessageProto.SystemMessage;
 import com.android.wifi.resources.R;
@@ -192,6 +194,7 @@ public class WifiSettingsStore {
      * Returns true if airplane mode is currently on.
      * @return {@code true} if airplane mode is on.
      */
+    @Keep
     public synchronized boolean isAirplaneModeOn() {
         return mAirplaneModeOn;
     }
@@ -250,6 +253,7 @@ public class WifiSettingsStore {
         mNotificationManager.notify(SystemMessage.NOTE_WIFI_APM_NOTIFICATION, builder.build());
     }
 
+    @Keep
     public synchronized boolean handleWifiToggled(boolean wifiEnabled) {
         // Can Wi-Fi be toggled in airplane mode ?
         if (mAirplaneModeOn && !isAirplaneToggleable()) {

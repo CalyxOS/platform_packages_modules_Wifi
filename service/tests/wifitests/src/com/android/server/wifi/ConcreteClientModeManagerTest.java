@@ -500,6 +500,7 @@ public class ConcreteClientModeManagerTest extends WifiBaseTest {
                 .thenReturn(false);
         InOrder inOrder = inOrder(mContext);
         mClientModeManager.setRole(ROLE_CLIENT_SCAN_ONLY, TEST_WORKSOURCE);
+        verify(mActiveModeWarden).setWifiStateForApiCalls(WIFI_STATE_DISABLING);
         mLooper.dispatchAll();
 
         // Verify callback received for failed transition

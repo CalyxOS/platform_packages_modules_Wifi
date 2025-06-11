@@ -22,6 +22,7 @@ import android.annotation.IntRange;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.RequiresApi;
+import android.annotation.Size;
 import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -44,6 +45,9 @@ import java.util.Objects;
 @RequiresApi(Build.VERSION_CODES.BAKLAVA)
 @FlaggedApi(Flags.FLAG_WIFI_DIRECT_R2)
 public final class WifiP2pUsdBasedServiceConfig implements Parcelable {
+    /** Maximum allowed length of service specific information */
+    private static final int SERVICE_SPECIFIC_INFO_MAXIMUM_LENGTH = 1024;
+
     /** Bonjour service protocol type */
     public static final int SERVICE_PROTOCOL_TYPE_BONJOUR = 1;
 
@@ -95,7 +99,7 @@ public final class WifiP2pUsdBasedServiceConfig implements Parcelable {
         return mServiceName;
     }
 
-    /** Get the service specific info of this USD service configuration. see also
+    /** Get the service specific info of this USD service configuration. See also
      * {@link Builder#setServiceSpecificInfo(byte[])} .
      *
      *
@@ -104,6 +108,15 @@ public final class WifiP2pUsdBasedServiceConfig implements Parcelable {
     @Nullable
     public byte[] getServiceSpecificInfo() {
         return mServiceSpecificInfo;
+    }
+
+    /**
+     * Maximum allowed length of service specific information that can be set in the USD service
+     * configuration.
+     * See also {@link Builder#setServiceSpecificInfo(byte[])}.
+     */
+    public static int getMaxAllowedServiceSpecificInfoLength() {
+        return SERVICE_SPECIFIC_INFO_MAXIMUM_LENGTH;
     }
 
     /**
@@ -156,9 +169,6 @@ public final class WifiP2pUsdBasedServiceConfig implements Parcelable {
     public static final class Builder {
         /** Maximum allowed length of service name */
         private static final int SERVICE_NAME_MAXIMUM_LENGTH = 100;
-
-        /** Maximum allowed length of service specific information */
-        private static final int SERVICE_SPECIFIC_INFO_MAXIMUM_LENGTH = 1024;
         private int mServiceProtocolType = SERVICE_PROTOCOL_TYPE_GENERIC;
         private @NonNull String mServiceName;
         byte[] mServiceSpecificInfo;
@@ -167,9 +177,9 @@ public final class WifiP2pUsdBasedServiceConfig implements Parcelable {
          * Constructor for {@link Builder}.
          *
          * @param serviceName The service name defining the service. The maximum
-         *                    allowed length of the service name is 100 bytes.
+         *                    allowed length of the service name is 100 characters.
          */
-        public Builder(@NonNull String serviceName) {
+        public Builder(@Size(min = 1) @NonNull String serviceName) {
             Objects.requireNonNull(serviceName, "Service name cannot be null");
             if (TextUtils.isEmpty(serviceName)) {
                 throw new IllegalArgumentException("Service name cannot be empty!");
@@ -209,18 +219,20 @@ public final class WifiP2pUsdBasedServiceConfig implements Parcelable {
          *     Optional. Empty by default.
          *
          * @param serviceSpecificInfo A byte-array of service-specific information available to the
-         *                            application to send additional information. The maximum
-         *                            allowed length of this byte-array is 1024 bytes.
+         *                            application to send additional information. Users must call
+         *                            {@link #getMaxAllowedServiceSpecificInfoLength()} method to
+         *                            know maximum allowed legth.
          *
          * @return The builder to facilitate chaining {@code builder.setXXX(..).setXXX(..)}.
          */
         @NonNull
-        public Builder setServiceSpecificInfo(@Nullable byte[] serviceSpecificInfo) {
+        public Builder setServiceSpecificInfo(
+                @Size(min = 1) @Nullable byte[] serviceSpecificInfo) {
             if (serviceSpecificInfo != null
-                    && serviceSpecificInfo.length > SERVICE_SPECIFIC_INFO_MAXIMUM_LENGTH) {
+                    && serviceSpecificInfo.length > getMaxAllowedServiceSpecificInfoLength()) {
                 throw new IllegalArgumentException("Service specific info length: "
                         + serviceSpecificInfo.length
-                        + " must be less than " + SERVICE_SPECIFIC_INFO_MAXIMUM_LENGTH);
+                        + " must be less than " + getMaxAllowedServiceSpecificInfoLength());
             }
             mServiceSpecificInfo = serviceSpecificInfo;
             return this;

@@ -71,7 +71,7 @@ public class WifiConnectivityHelperTest extends WifiBaseTest {
         when(mActiveModeWarden.getPrimaryClientModeManager()).thenReturn(mClientModeManager);
 
         // Return firmware roaming feature as supported by default.
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WIFI_FEATURE_CONTROL_ROAMING));
 
         WifiNative.RoamingCapabilities roamCap = new WifiNative.RoamingCapabilities();
@@ -125,7 +125,7 @@ public class WifiConnectivityHelperTest extends WifiBaseTest {
     public void returnFirmwareRoamingNotSupported() {
         BitSet supportedFeatures = new BitSet();
         supportedFeatures.set(WIFI_FEATURE_CONTROL_ROAMING, false);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(supportedFeatures);
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(supportedFeatures);
         assertTrue(mWifiConnectivityHelper.getFirmwareRoamingInfo());
         assertFalse(mWifiConnectivityHelper.isFirmwareRoamingSupported());
     }

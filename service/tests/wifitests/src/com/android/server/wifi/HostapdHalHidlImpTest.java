@@ -21,10 +21,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyLong;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyList;
@@ -1340,9 +1340,9 @@ public class HostapdHalHidlImpTest extends WifiBaseTest {
         verify(mSoftApHalCallback).onInfoChanged(eq(TEST_AP_INSTANCE), eq(testFreq),
                 eq(mHostapdHal.mapHalBandwidthToSoftApInfo(testBandwidth)),
                 eq(mHostapdHal.mapHalGenerationToWifiStandard(testGeneration)),
-                eq(MacAddress.fromString(TEST_CLIENT_MAC)), anyList());
+                eq(MacAddress.fromString(TEST_CLIENT_MAC)), eq(null),  anyList());
         verify(mSoftApHalCallback1, never()).onInfoChanged(anyString(), anyInt(), anyInt(),
-                anyInt(), any(), anyList());
+                anyInt(), any(), any(), anyList());
 
         // Trigger on client connected.
         mIHostapdCallback13.onConnectedClientsChanged(IFACE_NAME, TEST_AP_INSTANCE,

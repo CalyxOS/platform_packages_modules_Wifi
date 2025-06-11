@@ -104,6 +104,21 @@ public class WifiP2pServiceInfo implements Parcelable {
     private WifiP2pUsdBasedServiceConfig mUsdServiceConfig;
 
     /**
+     * Service advertisement session ID / Publish ID for USD based service advertisement.
+     * This is a nonzero value used to identify the instance of service advertisement.
+     * This value is filled in the service discovery response frame (USD publish frame),
+     * Service descriptor attribute (SDA) - instance ID field.
+     */
+    /**
+     * Service advertisement session ID (Advertiser ID) for USD based service discovery response.
+     * The session ID is used to identify a local advertisement session.
+     * It is a nonzero ID in the range of 1 to 255 filled in the Service descriptor attribute (SDA)
+     * - instance ID field of the service discovery response frame (Publish frame).
+     * Zero by default indicates that the USD session for this service is not running.
+     */
+    private int mUsdSessionId;
+
+    /**
      * This is only used in subclass.
      *
      * @param queryList query string for wpa_supplicant
@@ -122,12 +137,13 @@ public class WifiP2pServiceInfo implements Parcelable {
      *
      * @param queryList query string for wpa_supplicant
      * @param usdConfig See {@link WifiP2pUsdBasedServiceConfig}
-     *
+     * @param usdSessionId The USD based service advertisement session ID.
      */
     private WifiP2pServiceInfo(List<String> queryList,
-            @NonNull WifiP2pUsdBasedServiceConfig usdConfig) {
+            @NonNull WifiP2pUsdBasedServiceConfig usdConfig, int usdSessionId) {
         mQueryList = queryList;
         mUsdServiceConfig = usdConfig;
+        mUsdSessionId = usdSessionId;
     }
 
     /**
@@ -178,6 +194,34 @@ public class WifiP2pServiceInfo implements Parcelable {
         return mUsdServiceConfig;
     }
 
+    /**
+     * Return the Service advertisement session ID for USD based service advertisement.
+     *
+     * @return session id
+     * @hide
+     */
+    /**
+     * Return the Service advertisement session ID for USD based service advertisement.
+     * This ID is used to identify a service advertisement session.
+     *
+     * @return A nonzero ID in the range of 1 to 255 when the session is running.
+     * @hide
+     */
+    public int getUsdSessionId() {
+        return mUsdSessionId;
+    }
+
+    /**
+     * Set the service advertisement session ID for USD based service advertisement.
+     * Default value is zero.
+     *
+     * @param sessionId nonzero session ID is set when the USD session for this service is started.
+     * @hide
+     */
+    public void setUsdSessionId(int sessionId) {
+        mUsdSessionId = sessionId;
+    }
+
    /**
     * Converts byte array to hex string.
     *
@@ -214,6 +258,10 @@ public class WifiP2pServiceInfo implements Parcelable {
             return false;
         }
 
+       /*
+        * Don't compare USD based service advertisement session ID.
+        * The session ID may be changed on each service discovery advertisement.
+        */
         WifiP2pServiceInfo servInfo = (WifiP2pServiceInfo) o;
         return Objects.equals(mQueryList, servInfo.mQueryList)
                 && Objects.equals(mUsdServiceConfig, servInfo.mUsdServiceConfig);
@@ -237,6 +285,7 @@ public class WifiP2pServiceInfo implements Parcelable {
         dest.writeStringList(mQueryList);
         if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()) {
             dest.writeParcelable(mUsdServiceConfig, flags);
+            dest.writeInt(mUsdSessionId);
         }
     }
 
@@ -248,11 +297,13 @@ public class WifiP2pServiceInfo implements Parcelable {
                     List<String> data = new ArrayList<String>();
                     in.readStringList(data);
                     WifiP2pUsdBasedServiceConfig config = null;
+                    int usdSessionId = 0;
                     if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()) {
                         config = in.readParcelable(
                                 WifiP2pUsdBasedServiceConfig.class.getClassLoader());
+                        usdSessionId = in.readInt();
                     }
-                    return new WifiP2pServiceInfo(data, config);
+                    return new WifiP2pServiceInfo(data, config, usdSessionId);
                 }
                 public WifiP2pServiceInfo[] newArray(int size) {
                     return new WifiP2pServiceInfo[size];

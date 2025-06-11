@@ -35,6 +35,7 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SAE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SUITE_B;
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.wifi.supplicant.BtCoexistenceMode;
@@ -74,6 +75,13 @@ import android.hardware.wifi.supplicant.QosPolicyStatusCode;
 import android.hardware.wifi.supplicant.RxFilterType;
 import android.hardware.wifi.supplicant.SignalPollResult;
 import android.hardware.wifi.supplicant.SupplicantStatusCode;
+import android.hardware.wifi.supplicant.UsdBaseConfig;
+import android.hardware.wifi.supplicant.UsdCapabilities;
+import android.hardware.wifi.supplicant.UsdMessageInfo;
+import android.hardware.wifi.supplicant.UsdPublishConfig;
+import android.hardware.wifi.supplicant.UsdPublishTransmissionType;
+import android.hardware.wifi.supplicant.UsdServiceProtoType;
+import android.hardware.wifi.supplicant.UsdSubscribeConfig;
 import android.hardware.wifi.supplicant.WifiChannelWidthInMhz;
 import android.hardware.wifi.supplicant.WifiTechnology;
 import android.hardware.wifi.supplicant.WpaDriverCapabilitiesMask;
@@ -91,6 +99,9 @@ import android.net.wifi.WifiKeystore;
 import android.net.wifi.WifiMigration;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.flags.Flags;
+import android.net.wifi.usd.Config;
+import android.net.wifi.usd.PublishConfig;
+import android.net.wifi.usd.SubscribeConfig;
 import android.net.wifi.util.Environment;
 import android.os.Handler;
 import android.os.IBinder;
@@ -106,12 +117,15 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.HandlerExecutor;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.mockwifi.MockWifiServiceUtil;
+import com.android.server.wifi.usd.UsdNativeManager;
+import com.android.server.wifi.usd.UsdRequestManager;
 import com.android.server.wifi.util.HalAidlUtil;
 import com.android.server.wifi.util.NativeUtil;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
@@ -189,6 +203,13 @@ public class SupplicantStaIfaceHalAidlImpl implements ISupplicantStaIfaceHal {
     protected boolean mHasMigratedLegacyKeystoreAliases = false;
     @VisibleForTesting
     protected KeystoreMigrationStatusConsumer mKeystoreMigrationStatusConsumer;
+
+    /**
+     * Default implementation of USD events.
+     * {@link UsdRequestManager#registerUsdEventsCallback(UsdRequestManager.UsdNativeEventsCallback)} will override
+     * this default implementation.
+     */
+    private UsdNativeManager.UsdEventsCallback mUsdEventsCallback = null;
 
     private class SupplicantDeathRecipient implements DeathRecipient {
         @Override
@@ -321,7 +342,7 @@ public class SupplicantStaIfaceHalAidlImpl implements ISupplicantStaIfaceHal {
 
             ISupplicantStaIfaceCallback callback = new SupplicantStaIfaceCallbackAidlImpl(
                     SupplicantStaIfaceHalAidlImpl.this, ifaceName,
-                    new Object(), mContext, mWifiMonitor, mSsidTranslator);
+                    new Object(), mContext, mWifiMonitor, mSsidTranslator, mEventHandler);
             if (registerCallback(iface, callback)) {
                 mISupplicantStaIfaces.put(ifaceName, iface);
                 // Keep callback in a store to avoid recycling by garbage collector
@@ -4137,5 +4158,257 @@ public class SupplicantStaIfaceHalAidlImpl implements ISupplicantStaIfaceHal {
                 handleServiceSpecificException(e, methodStr);
             }
         }
+    }
+
+    @Override
+    public SupplicantStaIfaceHal.UsdCapabilitiesInternal getUsdCapabilities(String ifaceName) {
+        synchronized (mLock) {
+            if (!isServiceVersionAtLeast(4)) {
+                return null;
+            }
+            String methodStr = "getUsdCapabilities";
+            ISupplicantStaIface iface = checkStaIfaceAndLogFailure(ifaceName, methodStr);
+            if (iface == null) {
+                return null;
+            }
+            try {
+                UsdCapabilities usdCapabilities = iface.getUsdCapabilities();
+                return new SupplicantStaIfaceHal.UsdCapabilitiesInternal(
+                        usdCapabilities.isUsdPublisherSupported,
+                        usdCapabilities.isUsdSubscriberSupported,
+                        usdCapabilities.maxLocalSsiLengthBytes,
+                        usdCapabilities.maxServiceNameLengthBytes,
+                        usdCapabilities.maxMatchFilterLengthBytes,
+                        usdCapabilities.maxNumPublishSessions,
+                        usdCapabilities.maxNumSubscribeSessions);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return null;
+        }
+    }
+
+    @Override
+    public boolean startUsdPublish(String interfaceName, int cmdId, PublishConfig publishConfig) {
+        synchronized (mLock) {
+            if (!isServiceVersionAtLeast(4)) {
+                return false;
+            }
+            String methodStr = "startUsdPublish";
+            ISupplicantStaIface iface = checkStaIfaceAndLogFailure(interfaceName, methodStr);
+            if (iface == null) {
+                return false;
+            }
+            try {
+                iface.startUsdPublish(cmdId, frameworkToHalPublishConfig(publishConfig));
+                return true;
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return false;
+        }
+    }
+
+    private UsdPublishConfig frameworkToHalPublishConfig(PublishConfig frameworkConfig) {
+        UsdPublishConfig aidlConfig = new UsdPublishConfig();
+        // USD publisher is always solicited and unsolicited.
+        aidlConfig.publishType = UsdPublishConfig.PublishType.SOLICITED_AND_UNSOLICITED;
+        // USD has FSD enabled always.
+        aidlConfig.isFsd = true;
+        aidlConfig.transmissionType = frameworkToHalTransmissionType(
+                frameworkConfig.getSolicitedTransmissionType());
+        aidlConfig.announcementPeriodMillis = frameworkConfig.getAnnouncementPeriodMillis();
+        aidlConfig.usdBaseConfig = new UsdBaseConfig();
+        aidlConfig.usdBaseConfig.ttlSec = frameworkConfig.getTtlSeconds();
+        int[] freqs = frameworkConfig.getOperatingFrequenciesMhz();
+        aidlConfig.usdBaseConfig.defaultFreqMhz = (freqs == null) ? 2437 : freqs[0];
+        aidlConfig.usdBaseConfig.freqsMhz =
+                (freqs == null || freqs.length <= 1) ? new int[0] : Arrays.copyOfRange(freqs, 1,
+                        freqs.length);
+        aidlConfig.usdBaseConfig.serviceName = Arrays.toString(frameworkConfig.getServiceName());
+        aidlConfig.usdBaseConfig.serviceSpecificInfo =
+                frameworkConfig.getServiceSpecificInfo() != null
+                        ? frameworkConfig.getServiceSpecificInfo() : new byte[0];
+        aidlConfig.usdBaseConfig.rxMatchFilter = frameworkConfig.getRxMatchFilterTlv() != null
+                ? frameworkConfig.getRxMatchFilterTlv() : new byte[0];
+        aidlConfig.usdBaseConfig.txMatchFilter = frameworkConfig.getTxMatchFilterTlv() != null
+                ? frameworkConfig.getTxMatchFilterTlv() : new byte[0];
+        aidlConfig.usdBaseConfig.serviceProtoType = frameworkToHalProtoType(
+                frameworkConfig.getServiceProtoType());
+        return aidlConfig;
+    }
+
+    private static int frameworkToHalTransmissionType(
+            @Config.TransmissionType int transmissionType) {
+        if (transmissionType == Config.TRANSMISSION_TYPE_MULTICAST) {
+            return UsdPublishTransmissionType.MULTICAST;
+        } else {
+            return UsdPublishTransmissionType.UNICAST;
+        }
+    }
+
+    private static int frameworkToHalProtoType(int serviceProtoType) {
+        return switch (serviceProtoType) {
+            case Config.SERVICE_PROTO_TYPE_GENERIC -> UsdServiceProtoType.GENERIC;
+            case Config.SERVICE_PROTO_TYPE_CSA_MATTER -> UsdServiceProtoType.CSA_MATTER;
+            default -> UsdServiceProtoType.UNKNOWN;
+        };
+    }
+
+    @Override
+    public boolean startUsdSubscribe(String interfaceName, int cmdId,
+            SubscribeConfig subscribeConfig) {
+        if (!isServiceVersionAtLeast(4)) {
+            return false;
+        }
+        String methodStr = "startUsdSubscribe";
+        ISupplicantStaIface iface = checkStaIfaceAndLogFailure(interfaceName, methodStr);
+        if (iface == null) {
+            return false;
+        }
+        try {
+            iface.startUsdSubscribe(cmdId, frameworkToHalSubscribeConfig(subscribeConfig));
+            return true;
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+        return false;
+    }
+
+    private UsdSubscribeConfig frameworkToHalSubscribeConfig(SubscribeConfig frameworkConfig) {
+        UsdSubscribeConfig aidlconfig = new UsdSubscribeConfig();
+        aidlconfig.subscribeType = frameworkToHalSubscriberType(frameworkConfig.getSubscribeType());
+        aidlconfig.queryPeriodMillis = frameworkConfig.getQueryPeriodMillis();
+        aidlconfig.usdBaseConfig = new UsdBaseConfig();
+        aidlconfig.usdBaseConfig.ttlSec = frameworkConfig.getTtlSeconds();
+        int[] freqs = frameworkConfig.getOperatingFrequenciesMhz();
+        aidlconfig.usdBaseConfig.defaultFreqMhz = (freqs == null) ? 2437 : freqs[0];
+        aidlconfig.usdBaseConfig.freqsMhz =
+                (freqs == null || freqs.length <= 1) ? new int[0] : Arrays.copyOfRange(freqs, 1,
+                        freqs.length);
+        aidlconfig.usdBaseConfig.serviceName = Arrays.toString(frameworkConfig.getServiceName());
+        aidlconfig.usdBaseConfig.serviceSpecificInfo =
+                frameworkConfig.getServiceSpecificInfo() != null
+                        ? frameworkConfig.getServiceSpecificInfo() : new byte[0];
+        aidlconfig.usdBaseConfig.rxMatchFilter = frameworkConfig.getRxMatchFilterTlv() != null
+                ? frameworkConfig.getRxMatchFilterTlv() : new byte[0];
+        aidlconfig.usdBaseConfig.txMatchFilter = frameworkConfig.getTxMatchFilterTlv() != null
+                ? frameworkConfig.getTxMatchFilterTlv() : new byte[0];
+        aidlconfig.usdBaseConfig.serviceProtoType = frameworkToHalProtoType(
+                frameworkConfig.getServiceProtoType());
+        return aidlconfig;
+    }
+
+    private byte frameworkToHalSubscriberType(int subscribeType) {
+        if (subscribeType == Config.SUBSCRIBE_TYPE_ACTIVE) {
+            return UsdSubscribeConfig.SubscribeType.ACTIVE_MODE;
+        }
+        return UsdSubscribeConfig.SubscribeType.PASSIVE_MODE;
+    }
+
+    @Override
+    public void updateUsdPublish(String interfaceName, int publishId, byte[] ssi) {
+        if (!isServiceVersionAtLeast(4)) {
+            return;
+        }
+        String methodStr = "updateUsdPublish";
+        ISupplicantStaIface iface = checkStaIfaceAndLogFailure(interfaceName, methodStr);
+        if (iface == null) {
+            return;
+        }
+        try {
+            iface.updateUsdPublish(publishId, ssi);
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+    }
+
+    @Override
+    public void cancelUsdPublish(String interfaceName, int publishId) {
+        if (!isServiceVersionAtLeast(4)) {
+            return;
+        }
+        String methodStr = "updateUsdPublish";
+        ISupplicantStaIface iface = checkStaIfaceAndLogFailure(interfaceName, methodStr);
+        if (iface == null) {
+            return;
+        }
+        try {
+            iface.cancelUsdPublish(publishId);
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+    }
+
+    @Override
+    public void cancelUsdSubscribe(String interfaceName, int subscribeId) {
+        if (!isServiceVersionAtLeast(4)) {
+            return;
+        }
+        String methodStr = "cancelUsdSubscribe";
+        ISupplicantStaIface iface = checkStaIfaceAndLogFailure(interfaceName, methodStr);
+        if (iface == null) {
+            return;
+        }
+        try {
+            iface.cancelUsdSubscribe(subscribeId);
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+    }
+
+    @Override
+    public boolean sendUsdMessage(String interfaceName, int ownId, int peerId,
+            MacAddress peerMacAddress, byte[] message) {
+        if (!isServiceVersionAtLeast(4)) {
+            return false;
+        }
+        String methodStr = "sendUsdMessage";
+        ISupplicantStaIface iface = checkStaIfaceAndLogFailure(interfaceName, methodStr);
+        if (iface == null) {
+            return false;
+        }
+        try {
+            UsdMessageInfo usdMessageInfo = new UsdMessageInfo();
+            usdMessageInfo.ownId = ownId;
+            usdMessageInfo.peerId = peerId;
+            usdMessageInfo.peerMacAddress = peerMacAddress.toByteArray();
+            usdMessageInfo.message = message;
+            iface.sendUsdMessage(usdMessageInfo);
+            return true;
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+        return false;
+    }
+
+    /**
+     * Register a framework callback to receive USD events.
+     */
+    public void registerUsdEventsCallback(
+            UsdRequestManager.UsdNativeEventsCallback usdEventsCallback) {
+        mUsdEventsCallback = usdEventsCallback;
+    }
+
+    /**
+     * Get USD event callback.
+     */
+    @Nullable
+    public UsdNativeManager.UsdEventsCallback getUsdEventsCallback() {
+        return mUsdEventsCallback;
     }
 }

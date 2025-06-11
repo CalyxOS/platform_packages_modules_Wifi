@@ -28,6 +28,8 @@ import android.util.ArraySet;
 import android.util.Log;
 import android.util.SparseArray;
 
+import androidx.annotation.Keep;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.Protocol;
 import com.android.server.wifi.MboOceController.BtmFrameData;
@@ -178,6 +180,7 @@ public class WifiMonitor {
     }
 
     private final Map<String, SparseArray<Set<Handler>>> mHandlerMap = new HashMap<>();
+    @Keep
     public synchronized void registerHandler(String iface, int what, Handler handler) {
         SparseArray<Set<Handler>> ifaceHandlers = mHandlerMap.get(iface);
         if (ifaceHandlers == null) {
@@ -198,6 +201,7 @@ public class WifiMonitor {
      * @param what
      * @param handler
      */
+    @Keep
     public synchronized void deregisterHandler(String iface, int what, Handler handler) {
         SparseArray<Set<Handler>> ifaceHandlers = mHandlerMap.get(iface);
         if (ifaceHandlers == null) {

@@ -292,6 +292,23 @@ public class HostapdHal {
         }
     }
 
+    /**
+     * See comments for
+     * {@link IHostapdHal#removeLinkFromMultipleLinkBridgedApIface(String, String)}.
+     */
+    public void removeLinkFromMultipleLinkBridgedApIface(@NonNull String ifaceName,
+            @NonNull String apIfaceInstance) {
+        synchronized (mLock) {
+            String methodStr = "removeLinkFromMultipleLinkBridgedApIface";
+            if (mIHostapd == null) {
+                handleNullIHostapd(methodStr);
+                return;
+            }
+            mIHostapd.removeLinkFromMultipleLinkBridgedApIface(
+                    ifaceName, apIfaceInstance);
+        }
+    }
+
     private boolean handleNullIHostapd(String methodStr) {
         Log.e(TAG, "Cannot call " + methodStr + " because mIHostapd is null.");
         return false;

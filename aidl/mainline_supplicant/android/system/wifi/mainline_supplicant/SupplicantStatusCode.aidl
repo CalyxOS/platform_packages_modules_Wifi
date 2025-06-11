@@ -40,4 +40,8 @@ enum SupplicantStatusCode {
      * Interface with the provided name does not exist.
      */
     FAILURE_IFACE_UNKNOWN = 4,
+    /**
+     * Operation is not supported by the service.
+     */
+    FAILURE_UNSUPPORTED = 5,
 }

@@ -23,9 +23,9 @@ import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
@@ -107,6 +107,7 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
     private static final String TEST_CLIENT_MAC = "11:22:33:44:55:66";
     private static final String TEST_AP_INSTANCE = "instance-wlan0";
     private static final String TEST_AP_INSTANCE_2 = "instance-wlan1";
+    private static final String TEST_MLD_MAC = "aa:bb:cc:dd:ee:ff";
     private static final int TEST_FREQ_24G = 2412;
     private static final int TEST_FREQ_5G = 5745;
     private static final int TEST_BANDWIDTH = ChannelBandwidth.BANDWIDTH_20;
@@ -167,7 +168,7 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
 
     private void mockApInfoChangedAndVerify(String ifaceName, int numOfApInfo,
             IHostapdCallback mockHostapdCallback,
-            WifiNative.SoftApHalCallback mockSoftApHalCallback) throws Exception {
+            WifiNative.SoftApHalCallback mockSoftApHalCallback, boolean isMLD) throws Exception {
         // Trigger on info changed.
         ApInfo apInfo = new ApInfo();
         apInfo.ifaceName = ifaceName;
@@ -176,12 +177,16 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
         apInfo.channelBandwidth = TEST_BANDWIDTH;
         apInfo.generation = TEST_GENERATION;
         apInfo.apIfaceInstanceMacAddress = MacAddress.fromString(TEST_CLIENT_MAC).toByteArray();
+        if (isMLD) {
+            apInfo.mldMacAddress = MacAddress.fromString(TEST_MLD_MAC).toByteArray();
+        }
         if (numOfApInfo == 1) {
             mockHostapdCallback.onApInstanceInfoChanged(apInfo);
             verify(mockSoftApHalCallback).onInfoChanged(eq(TEST_AP_INSTANCE), eq(TEST_FREQ_24G),
                     eq(mHostapdHal.mapHalChannelBandwidthToSoftApInfo(TEST_BANDWIDTH)),
                     eq(mHostapdHal.mapHalGenerationToWifiStandard(TEST_GENERATION)),
-                    eq(MacAddress.fromString(TEST_CLIENT_MAC)), anyList());
+                    eq(MacAddress.fromString(TEST_CLIENT_MAC)),
+                    isMLD ? eq(MacAddress.fromString(TEST_MLD_MAC)) : eq(null), anyList());
         } else if (numOfApInfo == 2) {
             apInfo.apIfaceInstance = TEST_AP_INSTANCE_2;
             apInfo.freqMhz = TEST_FREQ_5G;
@@ -189,7 +194,8 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
             verify(mockSoftApHalCallback).onInfoChanged(eq(TEST_AP_INSTANCE_2), eq(TEST_FREQ_5G),
                     eq(mHostapdHal.mapHalChannelBandwidthToSoftApInfo(TEST_BANDWIDTH)),
                     eq(mHostapdHal.mapHalGenerationToWifiStandard(TEST_GENERATION)),
-                    eq(MacAddress.fromString(TEST_CLIENT_MAC)), anyList());
+                    eq(MacAddress.fromString(TEST_CLIENT_MAC)),
+                    isMLD ? eq(MacAddress.fromString(TEST_MLD_MAC)) : eq(null), anyList());
         }
     }
 
@@ -208,7 +214,7 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
         mResources.setString(R.string.config_wifiSoftap2gChannelList, "");
         mResources.setString(R.string.config_wifiSoftap5gChannelList, "");
         mResources.setString(R.string.config_wifiSoftap6gChannelList, "");
-
+        when(Flags.mloSap()).thenReturn(true);
         when(mContext.getResources()).thenReturn(mResources);
         when(mContext.getResourceCache()).thenReturn(new WifiResourceCache(mContext));
         doNothing().when(mIHostapdMock).addAccessPoint(
@@ -923,9 +929,9 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
         verify(mSoftApHalCallback1, never()).onFailure();
 
         // Trigger on info changed and verify.
-        mockApInfoChangedAndVerify(IFACE_NAME, 1, mIHostapdCallback, mSoftApHalCallback);
+        mockApInfoChangedAndVerify(IFACE_NAME, 1, mIHostapdCallback, mSoftApHalCallback, false);
         verify(mSoftApHalCallback1, never()).onInfoChanged(anyString(), anyInt(), anyInt(),
-                anyInt(), any(), anyList());
+                anyInt(), any(), any(), anyList());
 
         // Trigger on client connected.
         ClientInfo clientInfo = new ClientInfo();
@@ -1223,7 +1229,7 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
      * Verifies the onFailure event in bridged mode.
      */
     @Test
-    public void testHostapdCallbackOnFailureEventInBridgedMode() throws Exception {
+    public void testHostapdCallbackOnFailureEventInMldBridgedMode() throws Exception {
         assumeTrue(SdkLevel.isAtLeastT());
         executeAndValidateInitializationSequence(true);
         Builder configurationBuilder = new SoftApConfiguration.Builder();
@@ -1241,8 +1247,8 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
         mHostapdHal.registerApCallback(IFACE_NAME, mSoftApHalCallback);
 
         // Trigger on info changed and verify.
-        mockApInfoChangedAndVerify(IFACE_NAME, 1, mIHostapdCallback, mSoftApHalCallback);
-        mockApInfoChangedAndVerify(IFACE_NAME, 2, mIHostapdCallback, mSoftApHalCallback);
+        mockApInfoChangedAndVerify(IFACE_NAME, 1, mIHostapdCallback, mSoftApHalCallback, true);
+        mockApInfoChangedAndVerify(IFACE_NAME, 2, mIHostapdCallback, mSoftApHalCallback, true);
 
         // Trigger on instance failure from first instance.
         mIHostapdCallback.onFailure(IFACE_NAME, TEST_AP_INSTANCE);
@@ -1275,7 +1281,7 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
         mHostapdHal.registerApCallback(IFACE_NAME, mSoftApHalCallback);
 
         // Trigger on info changed and verify.
-        mockApInfoChangedAndVerify(IFACE_NAME, 1, mIHostapdCallback, mSoftApHalCallback);
+        mockApInfoChangedAndVerify(IFACE_NAME, 1, mIHostapdCallback, mSoftApHalCallback, false);
 
         // Trigger on failure from first instance.
         mIHostapdCallback.onFailure(IFACE_NAME, TEST_AP_INSTANCE);
@@ -1370,7 +1376,6 @@ public class HostapdHalAidlImpTest extends WifiBaseTest {
             throws Exception {
         assumeTrue(Environment.isSdkAtLeastB());
         mResources.setBoolean(R.bool.config_wifi_softap_acs_supported, true);
-        when(Flags.mloSap()).thenReturn(true);
         when(Flags.apIsolate()).thenReturn(true);
         when(mIHostapdMock.getInterfaceVersion()).thenReturn(3);
         mHostapdHal = new HostapdHalSpy();

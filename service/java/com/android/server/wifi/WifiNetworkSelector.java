@@ -708,7 +708,8 @@ public class WifiNetworkSelector {
         mIsEnhancedOpenSupportedInitialized = true;
         ClientModeManager primaryManager =
                 mWifiInjector.getActiveModeWarden().getPrimaryClientModeManager();
-        mIsEnhancedOpenSupported = primaryManager.getSupportedFeatures().get(WIFI_FEATURE_OWE);
+        mIsEnhancedOpenSupported = primaryManager
+                .getSupportedFeaturesBitSet().get(WIFI_FEATURE_OWE);
         return mIsEnhancedOpenSupported;
     }
 

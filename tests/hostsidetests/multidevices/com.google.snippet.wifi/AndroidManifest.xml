@@ -25,6 +25,8 @@
         android:value="com.google.snippet.wifi.aware.WifiAwareManagerSnippet,
                        com.google.snippet.wifi.aware.ConnectivityManagerSnippet,
                        com.google.snippet.wifi.direct.WifiP2pManagerSnippet,
+                       com.google.snippet.wifi.softap.TetheringManagerSnippet,
+                       com.google.snippet.wifi.WifiManagerSnippet,
                        com.google.android.mobly.snippet.bundled.WifiManagerSnippet"/>
     <meta-data
         android:name="mobly-object-converter"

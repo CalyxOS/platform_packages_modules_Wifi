@@ -20,6 +20,8 @@ import android.annotation.NonNull;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 
+import androidx.annotation.Keep;
+
 import com.android.server.wifi.hotspot2.NetworkDetail;
 
 import java.util.ArrayList;
@@ -93,6 +95,7 @@ public class ScanDetailCache {
         mMap.remove(bssid);
     }
 
+    @Keep
     int size() {
         return mMap.size();
     }
@@ -105,6 +108,7 @@ public class ScanDetailCache {
         return mMap.keySet();
     }
 
+    @Keep
     Collection<ScanDetail> values() {
         return mMap.values();
     }

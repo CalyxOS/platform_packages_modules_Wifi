@@ -21,6 +21,8 @@ import static android.net.wifi.p2p.WifiP2pManager.FEATURE_WIFI_DIRECT_R2;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.SuppressLint;
+import android.hardware.wifi.supplicant.BandMask;
 import android.hardware.wifi.supplicant.DebugLevel;
 import android.hardware.wifi.supplicant.FreqRange;
 import android.hardware.wifi.supplicant.ISupplicant;
@@ -33,23 +35,38 @@ import android.hardware.wifi.supplicant.KeyMgmtMask;
 import android.hardware.wifi.supplicant.MiracastMode;
 import android.hardware.wifi.supplicant.P2pAddGroupConfigurationParams;
 import android.hardware.wifi.supplicant.P2pConnectInfo;
+import android.hardware.wifi.supplicant.P2pCreateGroupOwnerInfo;
+import android.hardware.wifi.supplicant.P2pDirInfo;
 import android.hardware.wifi.supplicant.P2pDiscoveryInfo;
 import android.hardware.wifi.supplicant.P2pExtListenInfo;
 import android.hardware.wifi.supplicant.P2pFrameTypeMask;
+import android.hardware.wifi.supplicant.P2pPairingBootstrappingMethodMask;
+import android.hardware.wifi.supplicant.P2pProvisionDiscoveryParams;
+import android.hardware.wifi.supplicant.P2pReinvokePersistentGroupParams;
 import android.hardware.wifi.supplicant.P2pScanType;
+import android.hardware.wifi.supplicant.P2pUsdBasedServiceAdvertisementConfig;
+import android.hardware.wifi.supplicant.P2pUsdBasedServiceDiscoveryConfig;
 import android.hardware.wifi.supplicant.WpsConfigMethods;
 import android.hardware.wifi.supplicant.WpsProvisionMethod;
+import android.net.MacAddress;
 import android.net.wifi.CoexUnsafeChannel;
+import android.net.wifi.OuiKeyedData;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
+import android.net.wifi.p2p.WifiP2pDirInfo;
 import android.net.wifi.p2p.WifiP2pDiscoveryConfig;
 import android.net.wifi.p2p.WifiP2pExtListenParams;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pGroupList;
 import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.p2p.WifiP2pPairingBootstrappingConfig;
+import android.net.wifi.p2p.WifiP2pUsdBasedLocalServiceAdvertisementConfig;
+import android.net.wifi.p2p.WifiP2pUsdBasedServiceDiscoveryConfig;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
+import android.net.wifi.p2p.nsd.WifiP2pUsdBasedServiceConfig;
+import android.net.wifi.util.Environment;
 import android.os.IBinder;
 import android.os.IBinder.DeathRecipient;
 import android.os.RemoteException;
@@ -66,6 +83,7 @@ import com.android.server.wifi.WifiSettingsConfigStore;
 import com.android.server.wifi.util.ArrayUtils;
 import com.android.server.wifi.util.HalAidlUtil;
 import com.android.server.wifi.util.NativeUtil;
+import com.android.wifi.flags.Flags;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -811,6 +829,178 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
         }
     }
 
+    private String connectWithParams(boolean joinExistingGroup, byte[] peerAddress,
+            int provisionMethod, String preSelectedPin, boolean persistent, int groupOwnerIntent,
+            @NonNull List<OuiKeyedData> vendorData, int pairingBootstrappingMethod,
+            String pairingPassword, int frequencyMHz, boolean authorize,
+            String groupInterfaceName) {
+        synchronized (mLock) {
+            String methodStr = "connectWithParams";
+
+            // Parameters should be pre-validated.
+            P2pConnectInfo info = new P2pConnectInfo();
+            info.joinExistingGroup = joinExistingGroup;
+            info.peerAddress = peerAddress;
+            info.provisionMethod = provisionMethod;
+            info.preSelectedPin = preSelectedPin;
+            info.persistent = persistent;
+            info.goIntent = groupOwnerIntent;
+
+            if (!vendorData.isEmpty()) {
+                info.vendorData = HalAidlUtil.frameworkToHalOuiKeyedDataList(vendorData);
+            }
+            if (getCachedServiceVersion() >= 4 && pairingBootstrappingMethod != 0) {
+                info.pairingBootstrappingMethod = pairingBootstrappingMethod;
+                info.password = pairingPassword;
+                info.frequencyMHz = frequencyMHz;
+                info.authorizeConnectionFromPeer = authorize;
+                info.groupInterfaceName = groupInterfaceName;
+            }
+
+
+            try {
+                return mISupplicantP2pIface.connectWithParams(info);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return null;
+        }
+    }
+
+    @SuppressLint("NewApi")
+    private String connectInternal(WifiP2pConfig config, boolean joinExistingGroup,
+            String groupInterfaceName) {
+        synchronized (mLock) {
+            String methodStr = "connectInternal";
+            int provisionMethod = WpsProvisionMethod.NONE;
+            String preSelectedPin = "";
+            int pairingBootstrappingMethod = 0;
+            String pairingPassword = "";
+            int frequencyMHz = 0;
+            boolean authorize = false;
+            List<OuiKeyedData> vendorData = new ArrayList<>();
+
+            if (!checkP2pIfaceAndLogFailure(methodStr)) {
+                return null;
+            }
+            if (config == null) {
+                Log.e(TAG, "Could not connect because config is null.");
+                return null;
+            }
+            if (config.deviceAddress == null) {
+                Log.e(TAG, "Could not parse null mac address.");
+                return null;
+            }
+
+            if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()
+                    && config.getPairingBootstrappingConfig() != null) {
+                pairingBootstrappingMethod = convertPairingBootstrappingMethodToAidl(
+                        config.getPairingBootstrappingConfig().getPairingBootstrappingMethod());
+                if (pairingBootstrappingMethod == RESULT_NOT_VALID) {
+                    Log.e(TAG, "Unrecognized pairing bootstrapping method: "
+                            + config.getPairingBootstrappingConfig()
+                            .getPairingBootstrappingMethod());
+                    return null;
+                }
+                pairingPassword = config.getPairingBootstrappingConfig()
+                        .getPairingBootstrappingPassword();
+                // All other pairing bootstrapping methods other than opportunistic method requires
+                // a pairing pin/password.
+                if (pairingBootstrappingMethod == WifiP2pPairingBootstrappingConfig
+                        .PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC) {
+                    if (!TextUtils.isEmpty(
+                            pairingPassword)) {
+                        Log.e(TAG, "Expected empty Pin/Password for opportunistic"
+                                + "bootstrapping");
+                        return null;
+                    }
+                } else { // Non-opportunistic methods
+                    if (TextUtils.isEmpty(pairingPassword)) {
+                        Log.e(TAG, "Pin/Password is not set for AIDL bootstrapping method: "
+                                + pairingBootstrappingMethod);
+                        return null;
+                    }
+                }
+                // WifiP2pConfig Builder treat it as frequency.
+                if (config.groupOwnerBand != 0 && config.groupOwnerBand != 2
+                        && config.groupOwnerBand != 5 && config.groupOwnerBand != 6) {
+                    frequencyMHz = config.groupOwnerBand;
+                }
+                authorize = config.isAuthorizeConnectionFromPeerEnabled();
+            } else {
+                if (config.wps.setup == WpsInfo.PBC && !TextUtils.isEmpty(config.wps.pin)) {
+                    Log.e(TAG, "Expected empty pin for PBC.");
+                    return null;
+                }
+                provisionMethod = wpsInfoToConfigMethod(config.wps.setup);
+                if (provisionMethod == RESULT_NOT_VALID) {
+                    Log.e(TAG, "Invalid WPS config method: " + config.wps.setup);
+                    return null;
+                }
+                // NOTE: preSelectedPin cannot be null, otherwise hal would crash.
+                preSelectedPin = TextUtils.isEmpty(config.wps.pin) ? "" : config.wps.pin;
+            }
+
+            byte[] peerAddress = null;
+            try {
+                peerAddress = NativeUtil.macAddressToByteArray(config.deviceAddress);
+            } catch (IllegalArgumentException e) {
+                Log.e(TAG, "Could not parse peer mac address.", e);
+                return null;
+            }
+
+            boolean persistent = (config.netId == WifiP2pGroup.NETWORK_ID_PERSISTENT);
+
+            if (config.groupOwnerIntent < 0 || config.groupOwnerIntent > 15) {
+                Log.e(TAG, "Invalid group owner intent: " + config.groupOwnerIntent);
+                return null;
+            }
+
+            if (getCachedServiceVersion() >= 3) {
+                if (SdkLevel.isAtLeastV() && config.getVendorData() != null
+                        && !config.getVendorData().isEmpty()) {
+                    vendorData = config.getVendorData();
+                }
+                return connectWithParams(joinExistingGroup, peerAddress, provisionMethod,
+                        preSelectedPin, persistent, config.groupOwnerIntent, vendorData,
+                        pairingBootstrappingMethod, pairingPassword, frequencyMHz, authorize,
+                        groupInterfaceName);
+            }
+
+            try {
+                return mISupplicantP2pIface.connect(
+                        peerAddress, provisionMethod, preSelectedPin, joinExistingGroup,
+                        persistent, config.groupOwnerIntent);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Used to authorize a connection request to an existing Group Owner
+     * interface, to allow a peer device to connect.
+     *
+     * @param config Configuration to use for connection.
+     * @param groupOwnerInterfaceName Group Owner interface name on which the request to connect
+     *                           needs to be authorized.
+     *
+     * @return boolean value indicating whether operation was successful.
+     */
+    public boolean authorizeConnectRequestOnGroupOwner(
+            WifiP2pConfig config, String groupOwnerInterfaceName) {
+        if (TextUtils.isEmpty(groupOwnerInterfaceName)) {
+            Log.e(TAG, "authorizeConnectRequestOnGroupOwner: group owner interface is null");
+            return false;
+        }
+        return connectInternal(config, false, groupOwnerInterfaceName) != null;
+    }
+
     /**
      * Start P2P group formation with a discovered P2P peer. This includes
      * optional group owner negotiation, group interface setup, provisioning,
@@ -826,63 +1016,7 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
      *        uses PIN.
      */
     public String connect(WifiP2pConfig config, boolean joinExistingGroup) {
-        synchronized (mLock) {
-            String methodStr = "connect";
-
-            if (!checkP2pIfaceAndLogFailure(methodStr)) {
-                return null;
-            }
-            if (config == null) {
-                Log.e(TAG, "Could not connect because config is null.");
-                return null;
-            }
-            if (config.deviceAddress == null) {
-                Log.e(TAG, "Could not parse null mac address.");
-                return null;
-            }
-            if (config.wps.setup == WpsInfo.PBC && !TextUtils.isEmpty(config.wps.pin)) {
-                Log.e(TAG, "Expected empty pin for PBC.");
-                return null;
-            }
-
-            byte[] peerAddress = null;
-            try {
-                peerAddress = NativeUtil.macAddressToByteArray(config.deviceAddress);
-            } catch (IllegalArgumentException e) {
-                Log.e(TAG, "Could not parse peer mac address.", e);
-                return null;
-            }
-
-            int provisionMethod = wpsInfoToConfigMethod(config.wps.setup);
-            if (provisionMethod == RESULT_NOT_VALID) {
-                Log.e(TAG, "Invalid WPS config method: " + config.wps.setup);
-                return null;
-            }
-            // NOTE: preSelectedPin cannot be null, otherwise hal would crash.
-            String preSelectedPin = TextUtils.isEmpty(config.wps.pin) ? "" : config.wps.pin;
-            boolean persistent = (config.netId == WifiP2pGroup.NETWORK_ID_PERSISTENT);
-
-            if (config.groupOwnerIntent < 0 || config.groupOwnerIntent > 15) {
-                Log.e(TAG, "Invalid group owner intent: " + config.groupOwnerIntent);
-                return null;
-            }
-
-            if (getCachedServiceVersion() >= 3) {
-                return connectWithParams(joinExistingGroup, peerAddress, provisionMethod,
-                        preSelectedPin, persistent, config.groupOwnerIntent, config);
-            }
-
-            try {
-                return mISupplicantP2pIface.connect(
-                        peerAddress, provisionMethod, preSelectedPin, joinExistingGroup,
-                        persistent, config.groupOwnerIntent);
-            } catch (RemoteException e) {
-                handleRemoteException(e, methodStr);
-            } catch (ServiceSpecificException e) {
-                handleServiceSpecificException(e, methodStr);
-            }
-            return null;
-        }
+        return connectInternal(config, joinExistingGroup, null);
     }
 
     /**
@@ -923,9 +1057,12 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
      *
      * @return boolean value indicating whether operation was successful.
      */
+    @SuppressLint("NewApi")
     public boolean provisionDiscovery(WifiP2pConfig config) {
         synchronized (mLock) {
             String methodStr = "provisionDiscovery";
+            int pairingBootstrappingMethod = 0;
+            int targetWpsMethod = 0;
             if (!checkP2pIfaceAndLogFailure("provisionDiscovery")) {
                 return false;
             }
@@ -933,17 +1070,36 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
                 return false;
             }
 
-            int targetMethod = wpsInfoToConfigMethod(config.wps.setup);
-            if (targetMethod == RESULT_NOT_VALID) {
-                Log.e(TAG, "Unrecognized WPS configuration method: " + config.wps.setup);
-                return false;
-            }
-            if (targetMethod == WpsProvisionMethod.DISPLAY) {
-                // We are doing display, so provision discovery is keypad.
-                targetMethod = WpsProvisionMethod.KEYPAD;
-            } else if (targetMethod == WpsProvisionMethod.KEYPAD) {
-                // We are doing keypad, so provision discovery is display.
-                targetMethod = WpsProvisionMethod.DISPLAY;
+            if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()
+                    && config.getPairingBootstrappingConfig() != null) {
+                pairingBootstrappingMethod = convertPairingBootstrappingMethodToAidl(
+                        config.getPairingBootstrappingConfig().getPairingBootstrappingMethod());
+                if (pairingBootstrappingMethod == RESULT_NOT_VALID) {
+                    Log.e(TAG, "Unrecognized pairing bootstrapping method: "
+                            + config.getPairingBootstrappingConfig()
+                            .getPairingBootstrappingMethod());
+                    return false;
+                }
+                if (pairingBootstrappingMethod
+                        == P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OUT_OF_BAND) {
+                    Log.e(TAG, "Provisioning phase is not required for Bootstrapping method"
+                            + " out of band! Fail");
+                    return false;
+                }
+                targetWpsMethod = WpsProvisionMethod.NONE;
+            } else {
+                targetWpsMethod = wpsInfoToConfigMethod(config.wps.setup);
+                if (targetWpsMethod == RESULT_NOT_VALID) {
+                    Log.e(TAG, "Unrecognized WPS configuration method: " + config.wps.setup);
+                    return false;
+                }
+                if (targetWpsMethod == WpsProvisionMethod.DISPLAY) {
+                    // We are doing display, so provision discovery is keypad.
+                    targetWpsMethod = WpsProvisionMethod.KEYPAD;
+                } else if (targetWpsMethod == WpsProvisionMethod.KEYPAD) {
+                    // We are doing keypad, so provision discovery is display.
+                    targetWpsMethod = WpsProvisionMethod.DISPLAY;
+                }
             }
 
             if (config.deviceAddress == null) {
@@ -958,8 +1114,13 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
                 return false;
             }
 
+            if (getCachedServiceVersion() >= 4) {
+                return provisionDiscoveryWithParams(macAddress, targetWpsMethod,
+                        pairingBootstrappingMethod);
+            }
+
             try {
-                mISupplicantP2pIface.provisionDiscovery(macAddress, targetMethod);
+                mISupplicantP2pIface.provisionDiscovery(macAddress, targetWpsMethod);
                 return true;
             } catch (RemoteException e) {
                 handleRemoteException(e, methodStr);
@@ -967,6 +1128,48 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
                 handleServiceSpecificException(e, methodStr);
             }
             return false;
+        }
+    }
+
+    private boolean provisionDiscoveryWithParams(byte[] macAddress, int targetMethod,
+            int pairingBootstrappingMethod) {
+        String methodStr = "provisionDiscoveryWithParams";
+
+        // Expect that these parameters are already validated.
+        P2pProvisionDiscoveryParams params = new P2pProvisionDiscoveryParams();
+        params.peerMacAddress = macAddress;
+        params.provisionMethod = targetMethod;
+        params.pairingBootstrappingMethod = pairingBootstrappingMethod;
+        try {
+            mISupplicantP2pIface.provisionDiscoveryWithParams(params);
+            return true;
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+        return false;
+    }
+
+    @VisibleForTesting
+    protected static int convertPairingBootstrappingMethodToAidl(int pairingBootstrappingMethod) {
+        switch (pairingBootstrappingMethod) {
+            case WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC:
+                return P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OPPORTUNISTIC;
+            case WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PINCODE:
+                return P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PINCODE;
+            case WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PASSPHRASE:
+                return P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PASSPHRASE;
+            case WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE:
+                return P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PINCODE;
+            case WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE:
+                return P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PASSPHRASE;
+            case WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_OUT_OF_BAND:
+                return P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OUT_OF_BAND;
+            default:
+                Log.e(TAG, "Unsupported pairingBootstrappingMethod: "
+                        + pairingBootstrappingMethod);
+                return RESULT_NOT_VALID;
         }
     }
 
@@ -1146,21 +1349,41 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
         }
     }
 
+    private boolean reinvokePersistentGroupWithParams(byte[] macAddress, int networkId,
+            int dikId) {
+        String methodStr = "reinvokePersistentGroupWithParams";
+        P2pReinvokePersistentGroupParams params = new P2pReinvokePersistentGroupParams();
+        params.peerMacAddress = macAddress;
+        params.persistentNetworkId = networkId;
+        params.deviceIdentityEntryId = dikId;
+        try {
+            mISupplicantP2pIface.reinvokePersistentGroup(params);
+            return true;
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+        return false;
+    }
+
     /**
      * Reinvoke a device from a persistent group.
      *
-     * @param networkId Used to specify the persistent group.
+     * @param networkId Used to specify the persistent group (valid only for P2P V1 group).
      * @param peerAddress MAC address of the device to reinvoke.
+     * @param dikId The identifier of device identity key of the device to reinvoke.
+     *              (valid only for P2P V2 group).
      *
      * @return true, if operation was successful.
      */
-    public boolean reinvoke(int networkId, String peerAddress) {
+    public boolean reinvoke(int networkId, String peerAddress, int dikId) {
         synchronized (mLock) {
             String methodStr = "reinvoke";
             if (!checkP2pIfaceAndLogFailure(methodStr)) {
                 return false;
             }
-            if (TextUtils.isEmpty(peerAddress) || networkId < 0) {
+            if (TextUtils.isEmpty(peerAddress) || (networkId < 0 && dikId < 0)) {
                 return false;
             }
             byte[] macAddress = null;
@@ -1169,6 +1392,11 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
             } catch (IllegalArgumentException e) {
                 Log.e(TAG, "Could not parse mac address.", e);
                 return false;
+            }
+
+            /* Call only for P2P V2 group now. TODO extend for V1 group in the future. */
+            if (getCachedServiceVersion() >= 4 && dikId >= 0) {
+                return reinvokePersistentGroupWithParams(macAddress, networkId, dikId);
             }
 
             try {
@@ -1190,14 +1418,18 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
      *
      * @param networkId Used to specify the restart of a persistent group.
      * @param isPersistent Used to request a persistent group to be formed.
+     * @param isP2pV2 Used to start a Group Owner that support P2P2 IE
      *
      * @return true, if operation was successful.
      */
-    public boolean groupAdd(int networkId, boolean isPersistent) {
+    public boolean groupAdd(int networkId, boolean isPersistent, boolean isP2pV2) {
         synchronized (mLock) {
             String methodStr = "groupAdd";
             if (!checkP2pIfaceAndLogFailure(methodStr)) {
                 return false;
+            }
+            if (getCachedServiceVersion() >= 4) {
+                return createGroupOwner(networkId, isPersistent, isP2pV2);
             }
             try {
                 mISupplicantP2pIface.addGroup(isPersistent, networkId);
@@ -1209,6 +1441,26 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
             }
             return false;
         }
+    }
+
+    private boolean createGroupOwner(int networkId, boolean isPersistent, boolean isP2pV2) {
+        String methodStr = "createGroupOwner";
+
+        // Expect that these parameters are already validated.
+        P2pCreateGroupOwnerInfo groupOwnerInfo =
+                new P2pCreateGroupOwnerInfo();
+        groupOwnerInfo.persistent = isPersistent;
+        groupOwnerInfo.persistentNetworkId = networkId;
+        groupOwnerInfo.isP2pV2 = isP2pV2;
+        try {
+            mISupplicantP2pIface.createGroupOwner(groupOwnerInfo);
+            return true;
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+        return false;
     }
 
     /**
@@ -2716,6 +2968,229 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
                 handleServiceSpecificException(e, methodStr);
             }
             return false;
+        }
+    }
+
+    /**
+     * Start an Un-synchronized Service Discovery (USD) based P2P service discovery.
+     *
+     * @param usdServiceConfig is the USD based service configuration.
+     * @param discoveryConfig is the configuration for this service discovery request.
+     * @param timeoutInSeconds is the maximum time to be spent for this service discovery request.
+     */
+    @SuppressLint("NewApi")
+    public int startUsdBasedServiceDiscovery(WifiP2pUsdBasedServiceConfig usdServiceConfig,
+            WifiP2pUsdBasedServiceDiscoveryConfig discoveryConfig, int timeoutInSeconds) {
+        synchronized (mLock) {
+            String methodStr = "startUsdBasedServiceDiscovery";
+            if (!checkP2pIfaceAndLogFailure(methodStr)) {
+                return -1;
+            }
+            if (getCachedServiceVersion() < 4) {
+                return -1;
+            }
+            if (usdServiceConfig == null || discoveryConfig == null) {
+                return -1;
+            }
+            try {
+                P2pUsdBasedServiceDiscoveryConfig aidlUsdBasedServiceDiscoveryConfig =
+                        new P2pUsdBasedServiceDiscoveryConfig();
+                aidlUsdBasedServiceDiscoveryConfig.serviceName = usdServiceConfig.getServiceName();
+                aidlUsdBasedServiceDiscoveryConfig.serviceProtocolType = usdServiceConfig
+                        .getServiceProtocolType();
+                aidlUsdBasedServiceDiscoveryConfig.serviceSpecificInfo = usdServiceConfig
+                        .getServiceSpecificInfo();
+                if (discoveryConfig.getBand() != ScanResult.UNSPECIFIED) {
+                    aidlUsdBasedServiceDiscoveryConfig.bandMask =
+                            scanResultBandMaskToSupplicantHalWifiBandMask(
+                                    discoveryConfig.getBand());
+                } else {
+                    aidlUsdBasedServiceDiscoveryConfig.bandMask = 0;
+                }
+                aidlUsdBasedServiceDiscoveryConfig.frequencyListMhz = discoveryConfig
+                        .getFrequenciesMhz();
+                aidlUsdBasedServiceDiscoveryConfig.timeoutInSeconds = timeoutInSeconds;
+                return mISupplicantP2pIface.startUsdBasedServiceDiscovery(
+                        aidlUsdBasedServiceDiscoveryConfig);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return -1;
+        }
+    }
+
+    /**
+     * Stop an Un-synchronized Service Discovery (USD) based P2P service discovery.
+     *
+     * @param sessionId Identifier to cancel the service discovery instance.
+     *        Use zero to cancel all the service discovery instances.
+     */
+    public void stopUsdBasedServiceDiscovery(int sessionId) {
+        synchronized (mLock) {
+            String methodStr = "stopUsdBasedServiceDiscovery";
+            if (!checkP2pIfaceAndLogFailure(methodStr)) {
+                return;
+            }
+            if (getCachedServiceVersion() < 4) {
+                return;
+            }
+            try {
+                mISupplicantP2pIface.stopUsdBasedServiceDiscovery(sessionId);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+        }
+    }
+
+    /**
+     * Start an Un-synchronized Service Discovery (USD) based P2P service advertisement.
+     *
+     * @param usdServiceConfig is the USD based service configuration.
+     * @param advertisementConfig is the configuration for this service advertisement.
+     * @param timeoutInSeconds is the maximum time to be spent for this service advertisement.
+     */
+    @SuppressLint("NewApi")
+    public int startUsdBasedServiceAdvertisement(WifiP2pUsdBasedServiceConfig usdServiceConfig,
+            WifiP2pUsdBasedLocalServiceAdvertisementConfig advertisementConfig,
+            int timeoutInSeconds) {
+        synchronized (mLock) {
+            String methodStr = "startUsdBasedServiceAdvertisement";
+            if (!checkP2pIfaceAndLogFailure(methodStr)) {
+                return -1;
+            }
+            if (getCachedServiceVersion() < 4) {
+                return -1;
+            }
+            if (usdServiceConfig == null || advertisementConfig == null) {
+                return -1;
+            }
+            try {
+                P2pUsdBasedServiceAdvertisementConfig aidlServiceAdvertisementConfig =
+                        new P2pUsdBasedServiceAdvertisementConfig();
+                aidlServiceAdvertisementConfig.serviceName = usdServiceConfig.getServiceName();
+                aidlServiceAdvertisementConfig.serviceProtocolType = usdServiceConfig
+                        .getServiceProtocolType();
+                aidlServiceAdvertisementConfig.serviceSpecificInfo = usdServiceConfig
+                        .getServiceSpecificInfo();
+                aidlServiceAdvertisementConfig.frequencyMHz = advertisementConfig.getFrequencyMhz();
+                aidlServiceAdvertisementConfig.timeoutInSeconds = timeoutInSeconds;
+                return mISupplicantP2pIface.startUsdBasedServiceAdvertisement(
+                        aidlServiceAdvertisementConfig);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return -1;
+        }
+    }
+
+    /**
+     * Stop an Un-synchronized Service Discovery (USD) based P2P service advertisement.
+     *
+     * @param sessionId Identifier to cancel the service advertisement.
+     *        Use zero to cancel all the service advertisement instances.
+     */
+    public void stopUsdBasedServiceAdvertisement(int sessionId) {
+        synchronized (mLock) {
+            String methodStr = "stopUsdBasedServiceAdvertisement";
+            if (!checkP2pIfaceAndLogFailure(methodStr)) {
+                return;
+            }
+            if (getCachedServiceVersion() < 4) {
+                return;
+            }
+            try {
+                mISupplicantP2pIface.stopUsdBasedServiceAdvertisement(sessionId);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+        }
+    }
+
+    private static int scanResultBandMaskToSupplicantHalWifiBandMask(int bandMask) {
+        int halBandMask = 0;
+        if ((bandMask & ScanResult.WIFI_BAND_24_GHZ) != 0) {
+            halBandMask |= BandMask.BAND_2_GHZ;
+        }
+        if ((bandMask & ScanResult.WIFI_BAND_5_GHZ) != 0) {
+            halBandMask |= BandMask.BAND_5_GHZ;
+        }
+        if ((bandMask & ScanResult.WIFI_BAND_6_GHZ) != 0) {
+            halBandMask |= BandMask.BAND_6_GHZ;
+        }
+        return halBandMask;
+    }
+
+    /**
+     * Get the Device Identity Resolution (DIR) Information.
+     * See {@link WifiP2pDirInfo} for details
+     *
+     * @return {@link WifiP2pDirInfo} instance on success, null on failure.
+     */
+    @SuppressLint("NewApi")
+    public WifiP2pDirInfo getDirInfo() {
+        synchronized (mLock) {
+            String methodStr = "getDirInfo";
+            if (!checkP2pIfaceAndLogFailure(methodStr)) {
+                return null;
+            }
+            if (getCachedServiceVersion() < 4) {
+                return null;
+            }
+            try {
+                P2pDirInfo aidlDirInfo = mISupplicantP2pIface.getDirInfo();
+                WifiP2pDirInfo dirInfo = new WifiP2pDirInfo(MacAddress.fromBytes(
+                        aidlDirInfo.deviceInterfaceMacAddress),
+                        aidlDirInfo.nonce, aidlDirInfo.dirTag);
+                return dirInfo;
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            } catch (IllegalArgumentException e) {
+                Log.e(TAG, "Could not decode MAC Address.", e);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Validate the Device Identity Resolution (DIR) Information of a P2P device.
+     * See {@link WifiP2pDirInfo} for details.
+     *
+     * @param dirInfo {@link WifiP2pDirInfo} to validate.
+     * @return The identifier of device identity key on success, -1 on failure.
+     */
+    @SuppressLint("NewApi")
+    public int validateDirInfo(@NonNull WifiP2pDirInfo dirInfo) {
+        synchronized (mLock) {
+            String methodStr = "validateDirInfo";
+            if (!checkP2pIfaceAndLogFailure(methodStr)) {
+                return -1;
+            }
+            if (getCachedServiceVersion() < 4) {
+                return -1;
+            }
+            try {
+                P2pDirInfo aidlDirInfo = new P2pDirInfo();
+                aidlDirInfo.cipherVersion = P2pDirInfo.CipherVersion.DIRA_CIPHER_VERSION_128_BIT;
+                aidlDirInfo.deviceInterfaceMacAddress = dirInfo.getMacAddress().toByteArray();
+                aidlDirInfo.nonce = dirInfo.getNonce();
+                aidlDirInfo.dirTag = dirInfo.getDirTag();
+                return mISupplicantP2pIface.validateDirInfo(aidlDirInfo);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return -1;
         }
     }
 

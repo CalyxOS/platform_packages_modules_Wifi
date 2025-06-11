@@ -128,7 +128,7 @@ public class WakeupControllerTest extends WifiBaseTest {
         when(mWifiInjector.getWifiSettingsStore()).thenReturn(mWifiSettingsStore);
         when(mWifiInjector.getActiveModeWarden()).thenReturn(mActiveModeWarden);
         when(mActiveModeWarden.getPrimaryClientModeManager()).thenReturn(mPrimaryClientModeManager);
-        when(mPrimaryClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mPrimaryClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(
                         WifiManager.WIFI_FEATURE_WPA3_SAE, WifiManager.WIFI_FEATURE_OWE));
         when(mWifiInjector.getWifiNative()).thenReturn(mWifiNative);

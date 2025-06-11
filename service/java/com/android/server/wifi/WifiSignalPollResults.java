@@ -18,6 +18,8 @@ package com.android.server.wifi;
 
 import android.util.Log;
 
+import androidx.annotation.Keep;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -110,6 +112,7 @@ public class WifiSignalPollResults {
      *
      * @return rssi in dBm or {@link WifiSignalPollResults#MIN_RSSI} if no poll results.
      */
+    @Keep
     public int getRssi() {
         return mEntries.getOrDefault(mBestLinkId, mDefault).currentRssiDbm;
     }
@@ -167,6 +170,7 @@ public class WifiSignalPollResults {
      *
      * @return frequency in MHz or 0 if no poll results.
      */
+    @Keep
     public int getFrequency() {
         return mEntries.getOrDefault(mBestLinkId, mDefault).frequencyMHz;
     }

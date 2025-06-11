@@ -20,6 +20,7 @@ import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_LOCAL_ONLY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_PRIMARY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_SECONDARY_TRANSIENT;
 import static com.android.server.wifi.TestUtil.createCapabilityBitset;
+import static com.android.server.wifi.WifiLockManager.DELAY_LOCK_RELEASE_MS;
 
 import static org.hamcrest.CoreMatchers.not;
 import static org.junit.Assert.assertEquals;
@@ -135,7 +136,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mContext.getSystemService(PowerManager.class)).thenReturn(mPowerManager);
 
         when(mClientModeManager.getRole()).thenReturn(ROLE_CLIENT_PRIMARY);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(new BitSet());
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(new BitSet());
         when(mActiveModeWarden.getPrimaryClientModeManager()).thenReturn(mClientModeManager);
 
         when(mClientModeManager2.getRole()).thenReturn(ROLE_CLIENT_SECONDARY_TRANSIENT);
@@ -302,7 +303,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
 
         acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "", mBinder, mWorkSource);
         releaseWifiLockSuccessful(mBinder);
-        verify(mWifiMetrics).addWifiLockAcqSession(
+        verify(mWifiMetrics).addWifiLockManagerAcqSession(
                 eq(mDeviceConfigFacade.isHighPerfLockDeprecated() && SdkLevel.isAtLeastU()
                         ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY
                         : WifiManager.WIFI_MODE_FULL_HIGH_PERF), eq(new int[]{DEFAULT_TEST_UID_1}),
@@ -531,7 +532,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
             setScreenState(true);
             when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                     ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-            when(mClientModeManager.getSupportedFeatures())
+            when(mClientModeManager.getSupportedFeaturesBitSet())
                     .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
             when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
         }
@@ -562,7 +563,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
             setScreenState(true);
             when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                     ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-            when(mClientModeManager.getSupportedFeatures())
+            when(mClientModeManager.getSupportedFeaturesBitSet())
                     .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
             when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
             expectedMode = WifiManager.WIFI_MODE_FULL_LOW_LATENCY;
@@ -575,11 +576,28 @@ public class WifiLockManagerTest extends WifiBaseTest {
                 false);
 
         releaseWifiLockSuccessful(mBinder);
-        assertEquals(WifiManager.WIFI_MODE_NO_LOCKS_HELD,
-                mWifiLockManager.getStrongestLockMode());
+        assertEquals(WifiManager.WIFI_MODE_NO_LOCKS_HELD, mWifiLockManager.getStrongestLockMode());
+
+        mLooper.moveTimeForward(DELAY_LOCK_RELEASE_MS / 2 + 1);
+
+        acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "",
+                mBinder, mWorkSource);
+        assertEquals(expectedMode, mWifiLockManager.getStrongestLockMode());
+        releaseWifiLockSuccessful(mBinder);
+
+        mLooper.moveTimeForward(DELAY_LOCK_RELEASE_MS / 2 + 1);
+        assertEquals(WifiManager.WIFI_MODE_NO_LOCKS_HELD, mWifiLockManager.getStrongestLockMode());
+        mLooper.dispatchAll();
+        // Verify the first release is not triggered
+        inOrder.verify(mClientModeManager, never()).setPowerSave(
+                eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK), anyBoolean());
+
+        // Verify the last release is triggered
+        mLooper.moveTimeForward(DELAY_LOCK_RELEASE_MS + 1);
+        mLooper.dispatchAll();
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(expectedMode),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(eq(expectedMode),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
@@ -614,7 +632,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
 
         // Release the first lock
         releaseWifiLockSuccessful(mBinder);
-        verify(mWifiMetrics).addWifiLockAcqSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
+        verify(mWifiMetrics).addWifiLockManagerAcqSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyInt(), anyLong(),
                 anyBoolean(), anyBoolean(),
                 anyBoolean());
@@ -626,15 +644,19 @@ public class WifiLockManagerTest extends WifiBaseTest {
 
         // Release the second lock
         releaseWifiLockSuccessful(mBinder2);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        mLooper.moveTimeForward(DELAY_LOCK_RELEASE_MS + 1);
+        mLooper.dispatchAll();
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
         assertEquals(WifiManager.WIFI_MODE_NO_LOCKS_HELD,
                 mWifiLockManager.getStrongestLockMode());
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
 
@@ -704,7 +726,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
             setScreenState(true);
             when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                     ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-            when(mClientModeManager.getSupportedFeatures())
+            when(mClientModeManager.getSupportedFeaturesBitSet())
                     .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
             when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
             expectedMode = WifiManager.WIFI_MODE_FULL_LOW_LATENCY;
@@ -749,7 +771,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
             setScreenState(true);
             when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                     ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-            when(mClientModeManager.getSupportedFeatures())
+            when(mClientModeManager.getSupportedFeaturesBitSet())
                     .thenReturn(createCapabilityBitset(WifiManager.WIFI_MODE_FULL_LOW_LATENCY));
             when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
             expectedMode = WifiManager.WIFI_MODE_FULL_LOW_LATENCY;
@@ -762,14 +784,16 @@ public class WifiLockManagerTest extends WifiBaseTest {
                 false);
 
         releaseWifiLockSuccessful(mBinder);
-        verify(mWifiMetrics).addWifiLockAcqSession(eq(expectedMode),
+        verify(mWifiMetrics).addWifiLockManagerAcqSession(eq(expectedMode),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyInt(), anyLong(),
                 anyBoolean(), anyBoolean(), anyBoolean());
         assertEquals(WifiManager.WIFI_MODE_NO_LOCKS_HELD,
                 mWifiLockManager.getStrongestLockMode());
+        mLooper.moveTimeForward(DELAY_LOCK_RELEASE_MS + 1);
+        mLooper.dispatchAll();
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics, never()).addWifiLockActiveSession(
+        verify(mWifiMetrics, never()).addWifiLockManagerActiveSession(
                 eq(expectedMode), eq(new int[]{DEFAULT_TEST_UID_1}),
                 eq(new String[]{null}), anyLong(), anyBoolean(), anyBoolean(), anyBoolean());
 
@@ -782,7 +806,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
                 mWifiLockManager.getStrongestLockMode());
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(expectedMode),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(eq(expectedMode),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
@@ -811,9 +835,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
                 mWifiLockManager.getStrongestLockMode());
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
-                eq(new int[0]), eq(new String[0]), anyLong(), anyBoolean(),
-                anyBoolean(), anyBoolean());
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF), eq(new int[0]), eq(new String[0]),
+                anyLong(), anyBoolean(), anyBoolean(), anyBoolean());
     }
 
     /**
@@ -841,7 +865,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
                 eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK), anyBoolean());
 
         releaseWifiLockSuccessful(mBinder);
-        verify(mWifiMetrics).addWifiLockAcqSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
+        verify(mWifiMetrics).addWifiLockManagerAcqSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyInt(), anyLong(),
                 anyBoolean(), anyBoolean(), anyBoolean());
         assertEquals(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
@@ -854,8 +878,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
                 mWifiLockManager.getStrongestLockMode());
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
 
@@ -1011,7 +1036,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "",
@@ -1031,7 +1056,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_TX_POWER_LIMIT));
 
         acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "",
@@ -1051,7 +1076,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         // Make sure setLowLatencyMode() is successful
@@ -1070,11 +1095,18 @@ public class WifiLockManagerTest extends WifiBaseTest {
         releaseLowLatencyWifiLockSuccessful(mBinder);
         assertEquals(WifiManager.WIFI_MODE_NO_LOCKS_HELD,
                 mWifiLockManager.getStrongestLockMode());
+        mLooper.dispatchAll();
+        verify(mClientModeManager, never()).setLowLatencyMode(false);
+        verify(mClientModeManager, never()).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
+                true);
+        mLooper.moveTimeForward(DELAY_LOCK_RELEASE_MS + 1);
+        mLooper.dispatchAll();
         inOrder.verify(mClientModeManager).setLowLatencyMode(false);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
 
@@ -1090,7 +1122,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         // Fail the call to ClientModeManager
@@ -1120,7 +1152,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         // Succeed to setLowLatencyMode()
@@ -1149,7 +1181,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         // Make sure setLowLatencyMode() is successful
@@ -1173,8 +1205,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
         inOrder.verify(mClientModeManager).setLowLatencyMode(false);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
 
@@ -1188,7 +1221,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         // Make sure setLowLatencyMode() is successful
@@ -1217,8 +1250,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
         inOrder.verify(mClientModeManager).setLowLatencyMode(false);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
 
@@ -1231,7 +1265,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         // Initially, set screen on, and app background
         setScreenState(true);
         when(mFrameworkFacade.isAppForeground(any(), anyInt())).thenReturn(false);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         // Make sure setLowLatencyMode() is successful
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
@@ -1274,7 +1308,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         // Initially, set screen on, and app background
         setScreenState(true);
         when(mFrameworkFacade.isAppForeground(any(), anyInt())).thenReturn(false);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
 
@@ -1307,8 +1341,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
 
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
         inOrder.verify(mClientModeManager).setLowLatencyMode(true);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
@@ -1326,7 +1361,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
         when(mClientModeManager.setPowerSave(eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK),
                 anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         InOrder inOrder = inOrder(mClientModeManager);
@@ -1347,9 +1382,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
         inOrder.verify(mClientModeManager).setLowLatencyMode(false);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
-                eq(new int[0]), eq(new String[0]), anyLong(), anyBoolean(),
-                anyBoolean(), anyBoolean());
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY), eq(new int[0]), eq(new String[0]),
+                anyLong(), anyBoolean(), anyBoolean(), anyBoolean());
     }
 
     /**
@@ -1361,7 +1396,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClientModeManager.setPowerSave(eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK),
                 anyBoolean())).thenReturn(true);
         setScreenState(false);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
 
@@ -1402,7 +1437,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         InOrder inOrder = inOrder(mClientModeManager);
@@ -1435,8 +1470,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
         inOrder.verify(mClientModeManager).setLowLatencyMode(false);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyLong(), anyBoolean(),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY), eq(new int[]{DEFAULT_TEST_UID_1}),
+                eq(new String[]{null}), anyLong(), anyBoolean(),
                 anyBoolean(), anyBoolean());
     }
 
@@ -1448,7 +1484,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
         when(mClientModeManager.setPowerSave(eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK),
                 anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
 
@@ -1477,7 +1513,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
         when(mClientModeManager.setPowerSave(eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK),
                 anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
         InOrder inOrder = inOrder(mClientModeManager);
@@ -1494,9 +1530,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
 
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF),
-                eq(new int[0]), eq(new String[0]), anyLong(), anyBoolean(), anyBoolean(),
-                anyBoolean());
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_HIGH_PERF), eq(new int[0]), eq(new String[0]),
+                anyLong(), anyBoolean(), anyBoolean(), anyBoolean());
         inOrder.verify(mClientModeManager).setLowLatencyMode(true);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 false);
@@ -1510,7 +1546,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
         when(mClientModeManager.setPowerSave(eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK),
                 anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
 
@@ -1529,9 +1565,9 @@ public class WifiLockManagerTest extends WifiBaseTest {
         inOrder.verify(mClientModeManager).setLowLatencyMode(false);
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 true);
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
-                eq(new int[0]), eq(new String[0]), anyLong(), anyBoolean(), anyBoolean(),
-                anyBoolean());
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY), eq(new int[0]), eq(new String[0]),
+                anyLong(), anyBoolean(), anyBoolean(), anyBoolean());
         inOrder.verify(mClientModeManager).setPowerSave(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK,
                 false);
     }
@@ -1543,7 +1579,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
     public void testForceLowLatencyFailure() throws Exception {
         int expectedMode = WifiManager.WIFI_MODE_FULL_HIGH_PERF;
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(false);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         InOrder inOrder = inOrder(mClientModeManager);
@@ -1701,7 +1737,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
             setScreenState(true);
             when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                     ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-            when(mClientModeManager.getSupportedFeatures())
+            when(mClientModeManager.getSupportedFeaturesBitSet())
                     .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
             when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
             expectedMode = WifiManager.WIFI_MODE_FULL_LOW_LATENCY;
@@ -1720,8 +1756,8 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClock.getElapsedSinceBootMillis()).thenReturn(deactivationTime);
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, false);
 
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(expectedMode),
-                eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(expectedMode), eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}),
                 eq(deactivationTime - activationTime), eq(true), eq(false), eq(false));
 
 
@@ -1729,7 +1765,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClock.getElapsedSinceBootMillis()).thenReturn(releaseTime);
         releaseWifiLockSuccessful_noBatteryStats(mBinder);
 
-        verify(mWifiMetrics).addWifiLockAcqSession(eq(expectedMode),
+        verify(mWifiMetrics).addWifiLockManagerAcqSession(eq(expectedMode),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyInt(),
                 eq(releaseTime - acquireTime), eq(true), eq(false), eq(false));
     }
@@ -1754,7 +1790,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         setScreenState(true);
         when(mActivityManager.getUidImportance(anyInt())).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         InOrder inOrder = inOrder(mWifiMetrics);
@@ -1772,7 +1808,8 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClock.getElapsedSinceBootMillis()).thenReturn(deactivationTime);
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, false);
 
-        verify(mWifiMetrics).addWifiLockActiveSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
+        verify(mWifiMetrics).addWifiLockManagerActiveSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}),
                 eq(deactivationTime - activationTime), eq(true), eq(false), eq(false));
 
@@ -1780,7 +1817,8 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClock.getElapsedSinceBootMillis()).thenReturn(releaseTime);
         releaseWifiLockSuccessful_noBatteryStats(mBinder);
 
-        verify(mWifiMetrics).addWifiLockAcqSession(eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
+        verify(mWifiMetrics).addWifiLockManagerAcqSession(
+                eq(WifiManager.WIFI_MODE_FULL_LOW_LATENCY),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyInt(),
                 eq(releaseTime - acquireTime), eq(true), eq(false), eq(false));
 
@@ -1823,7 +1861,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_HIGH_PERF, TEST_WIFI_LOCK_TAG,
                 mBinder, mWorkSource);
         releaseWifiLockSuccessful(mBinder);
-        verify(mWifiMetrics).addWifiLockAcqSession(eq(expectedMode),
+        verify(mWifiMetrics).addWifiLockManagerAcqSession(eq(expectedMode),
                 eq(new int[]{DEFAULT_TEST_UID_1}), eq(new String[]{null}), anyInt(), anyLong(),
                 anyBoolean(), anyBoolean(), anyBoolean());
         acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_HIGH_PERF, TEST_WIFI_LOCK_TAG,
@@ -1901,7 +1939,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
         when(mClientModeManager.setPowerSave(eq(ClientMode.POWER_SAVE_CLIENT_WIFI_LOCK),
                 anyBoolean())).thenReturn(false);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
 
         InOrder inOrder = inOrder(mClientModeManager);
@@ -1948,7 +1986,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mActivityManager.getUidImportance(DEFAULT_TEST_UID_1)).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "", mBinder, mWorkSource);
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
@@ -2041,7 +2079,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         BitSet supportedFeatures = new BitSet();
         supportedFeatures.set(WifiManager.WIFI_FEATURE_LOW_LATENCY, false);
         supportedFeatures.set(WifiManager.WIFI_FEATURE_DPP, true);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(supportedFeatures);
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(supportedFeatures);
 
         acquireWifiLockSuccessful(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "", mBinder, mWorkSource);
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
@@ -2066,7 +2104,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mActivityManager.getUidImportance(DEFAULT_TEST_UID_1)).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
 
@@ -2112,7 +2150,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mActivityManager.getUidImportance(DEFAULT_TEST_UID_1)).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
 
@@ -2160,7 +2198,7 @@ public class WifiLockManagerTest extends WifiBaseTest {
         when(mActivityManager.getUidImportance(DEFAULT_TEST_UID_1)).thenReturn(
                 ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
         when(mClientModeManager.setLowLatencyMode(anyBoolean())).thenReturn(true);
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WifiManager.WIFI_FEATURE_LOW_LATENCY));
         mWifiLockManager.updateWifiClientConnected(mClientModeManager, true);
 

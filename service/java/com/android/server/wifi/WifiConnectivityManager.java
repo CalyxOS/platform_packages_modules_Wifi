@@ -665,6 +665,14 @@ public class WifiConnectivityManager {
         // If cellular is unavailable, re-enable Wi-Fi networks disabled by pinning to cell.
         mConfigManager.considerStopRestrictingAutoJoinToSubscriptionId();
 
+        if (isFullScan) {
+            if (mVerboseLoggingEnabled) {
+                Log.v(TAG, "Clearing blocklist for REASON_FRAMEWORK_DISCONNECT_FAST_RECONNECT");
+            }
+            mWifiBlocklistMonitor.clearBssidBlocklistForReason(
+                    WifiBlocklistMonitor.REASON_FRAMEWORK_DISCONNECT_FAST_RECONNECT);
+        }
+
         // Check if any blocklisted BSSIDs can be freed.
         List<ScanDetail> enabledDetails =
                 mWifiBlocklistMonitor.tryEnablingBlockedBssids(scanDetails);

@@ -29,10 +29,6 @@ import android.net.wifi.rtt.WifiRttManager;
 import android.net.wifi.usd.IUsdManager;
 import android.net.wifi.usd.UsdManager;
 import android.net.wifi.util.Environment;
-import android.os.HandlerThread;
-import android.os.Looper;
-
-import androidx.annotation.VisibleForTesting;
 
 /**
  * Class for performing registration for all Wifi services.
@@ -41,32 +37,6 @@ import androidx.annotation.VisibleForTesting;
  */
 @SystemApi
 public class WifiFrameworkInitializer {
-
-    /**
-     * A class implementing the lazy holder idiom: the unique static instance
-     * of {@link #INSTANCE} is instantiated in a thread-safe way (guaranteed by
-     * the language specs) the first time that NoPreloadHolder is referenced in getInstanceLooper().
-     *
-     * This is necessary because we can't spawn a new thread in {@link #registerServiceWrappers()}.
-     * {@link #registerServiceWrappers()} is called during the Zygote phase, which disallows
-     * spawning new threads. Naming the class "NoPreloadHolder" ensures that the classloader will
-     * not preload this class, inadvertently spawning the thread too early.
-     */
-    private static class NoPreloadHolder {
-        private static final HandlerThread INSTANCE = createInstance();
-
-        private static HandlerThread createInstance() {
-            HandlerThread thread = new HandlerThread("WifiManagerThread");
-            thread.start();
-            return thread;
-        }
-    }
-    /** @hide */
-    @VisibleForTesting
-    public static Looper getInstanceLooper() {
-        return NoPreloadHolder.INSTANCE.getLooper();
-    }
-
     private WifiFrameworkInitializer() {}
 
     /**
@@ -86,7 +56,7 @@ public class WifiFrameworkInitializer {
                         return null;
                     }
                     IWifiManager service = IWifiManager.Stub.asInterface(serviceBinder);
-                    return new WifiManager(context, service, getInstanceLooper());
+                    return new WifiManager(context, service);
                 }
         );
         SystemServiceRegistry.registerContextAwareService(
@@ -122,7 +92,7 @@ public class WifiFrameworkInitializer {
                         return null;
                     }
                     IWifiScanner service = IWifiScanner.Stub.asInterface(serviceBinder);
-                    return new WifiScanner(context, service, getInstanceLooper());
+                    return new WifiScanner(context, service);
                 }
         );
         SystemServiceRegistry.registerContextAwareService(
@@ -152,10 +122,10 @@ public class WifiFrameworkInitializer {
         if (Flags.usd() && Environment.isSdkAtLeastB()) {
             SystemServiceRegistry.registerContextAwareService(
                     Context.WIFI_USD_SERVICE,
-                    UsdManager.class,
-                    (context, serviceBinder) -> {
-                        if (!context.getPackageManager().hasSystemFeature(
-                                PackageManager.FEATURE_WIFI)) {
+                    UsdManager.class, (context, serviceBinder) -> {
+                        if (!context.getResources().getBoolean(
+                                context.getResources().getIdentifier("config_deviceSupportsWifiUsd",
+                                        "bool", "android"))) {
                             return null;
                         }
                         IUsdManager service = IUsdManager.Stub.asInterface(serviceBinder);

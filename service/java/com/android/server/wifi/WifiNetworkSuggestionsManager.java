@@ -1117,7 +1117,7 @@ public class WifiNetworkSuggestionsManager {
         }
 
         BitSet supportedFeatures = mWifiInjector.getActiveModeWarden()
-                .getPrimaryClientModeManager().getSupportedFeatures();
+                .getPrimaryClientModeManager().getSupportedFeaturesBitSet();
 
         for (WifiNetworkSuggestion wns : networkSuggestions) {
             if (wns.passpointConfiguration == null) {

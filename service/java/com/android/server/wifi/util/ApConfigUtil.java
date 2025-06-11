@@ -904,6 +904,7 @@ public class ApConfigUtil {
      *                IEEE80211BE & single link MLO in bridged mode from the resource file.
      * @param config The current {@link SoftApConfiguration}.
      * @param isBridgedMode true if bridged mode is enabled, false otherwise.
+     * @param maximumSupportedMLD maximum number of supported MLD on SoftAp.
      * @param currentExistingMLD number of existing 11BE SoftApManager.
      * @param isMLDApSupportMLO true if the chip reports the support multiple links
      *                                    on a single MLD AP.
@@ -913,7 +914,7 @@ public class ApConfigUtil {
     public static boolean is11beAllowedForThisConfiguration(DeviceWiphyCapabilities capabilities,
             @NonNull WifiContext context,
             SoftApConfiguration config,
-            boolean isBridgedMode, int currentExistingMLD,
+            boolean isBridgedMode, int maximumSupportedMLD, int currentExistingMLD,
             boolean isMLDApSupportMLO) {
         if (!ApConfigUtil.isIeee80211beSupported(context)) {
             return false;
@@ -926,7 +927,7 @@ public class ApConfigUtil {
             }
         }
         if (Flags.mloSap()) {
-            if (!hasAvailableMLD(context, isBridgedMode,
+            if (!hasAvailableMLD(context, isBridgedMode, maximumSupportedMLD,
                     currentExistingMLD, isMLDApSupportMLO)) {
                 Log.i(TAG, "No available MLD, hence downgrading from 11be. currentExistingMLD = "
                         + currentExistingMLD + ", isMLDApSupportMLO = " + isMLDApSupportMLO);
@@ -946,10 +947,10 @@ public class ApConfigUtil {
     }
 
     private static boolean hasAvailableMLD(@NonNull WifiContext context,
-            boolean isBridgedMode, int currentExistingMLD,
+            boolean isBridgedMode, int maximumSupportedMLD, int currentExistingMLD,
             boolean isMLDApSupportMLO) {
         int numberOfMLDStillAllowed =
-                maximumNumberOfMLDForMLOAp(context) - currentExistingMLD;
+                maximumSupportedMLD - currentExistingMLD;
         if (numberOfMLDStillAllowed < 1) {
             return false;
         }
@@ -960,10 +961,21 @@ public class ApConfigUtil {
         return true;
     }
 
-    private static int maximumNumberOfMLDForMLOAp(@NonNull WifiContext context) {
+    /**
+     * Returns maximum number of supported MLD on SoftAp.
+     *
+     * @param context The caller context used to get the OEM configuration from resource file.
+     * @param chipSupportsMultipleMld whether Chip supports multiple mld on SoftAp.
+     */
+    public static int getMaximumSupportedMLD(@NonNull WifiContext context,
+            boolean chipSupportsMultipleMld) {
         int numberOfMLDSupported = context.getResourceCache()
                 .getInteger(R.integer.config_wifiSoftApMaxNumberMLDSupported);
-        if (numberOfMLDSupported != 0) {
+        if (numberOfMLDSupported > 0) {
+            if (Flags.multipleMldOnSapSupported() && !chipSupportsMultipleMld) {
+                // Chip doesn't support multiple mld on SoftAp
+                return 1;
+            }
             return numberOfMLDSupported;
         }
         if (context.getResourceCache().getBoolean(

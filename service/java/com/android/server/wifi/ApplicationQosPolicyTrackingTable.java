@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -230,7 +231,7 @@ public class ApplicationQosPolicyTrackingTable {
             policyStream = policyStream.filter(p ->
                     shouldContainQosChars == (p.getQosCharacteristics() != null));
         }
-        return policyStream.toList();
+        return policyStream.collect(Collectors.toList());
     }
 
     /**

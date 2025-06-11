@@ -454,7 +454,7 @@ public final class SoftApInfo implements Parcelable {
         sbuf.append(", mApInstanceIdentifier= ").append(mApInstanceIdentifier);
         sbuf.append(", mIdleShutdownTimeoutMillis= ").append(mIdleShutdownTimeoutMillis);
         sbuf.append(", mVendorData= ").append(mVendorData);
-        if (mMldAddress != null) sbuf.append(",mMldAddress=").append(mBssid.toString());
+        if (mMldAddress != null) sbuf.append(",mMldAddress=").append(mMldAddress.toString());
         sbuf.append("}");
         return sbuf.toString();
     }

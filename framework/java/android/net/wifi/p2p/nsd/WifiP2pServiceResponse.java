@@ -76,6 +76,17 @@ public class WifiP2pServiceResponse implements Parcelable {
      */
     private WifiP2pUsdBasedServiceResponse mUsdBasedServiceResponse;
 
+    /**
+     * Service discovery response requester session ID (Seeker ID) for USD based service discovery.
+     * The session ID is used to match the USD based service discovery request/response frames.
+     * A nonzero ID in the range of 1 to 255 is filled in the Service descriptor attribute (SDA) -
+     * instance ID field of the service discovery request frame (Subscribe frame). The responding
+     * device copies this ID in the Service descriptor attribute (SDA) - requester instance ID
+     * field of the service discovery response frame (Publish frame).
+     *
+     */
+    private int mUsdSessionId;
+
 
     /**
      * The status code of service discovery response.
@@ -140,16 +151,38 @@ public class WifiP2pServiceResponse implements Parcelable {
      *
      * @param device source device.
      * @param usdResponseData USD based service response data.
+     * @param usdSessionId The USD based service discovery request/response session ID.
      * @hide
      */
     public WifiP2pServiceResponse(WifiP2pDevice device,
-            @NonNull WifiP2pUsdBasedServiceResponse usdResponseData) {
+            @NonNull WifiP2pUsdBasedServiceResponse usdResponseData, int usdSessionId) {
         mServiceType = 0;
         mStatus = 0;
         mTransId = 0;
         mDevice = device;
         mData = null;
         mUsdBasedServiceResponse = usdResponseData;
+        mUsdSessionId = usdSessionId;
+    }
+
+    /**
+     * Return the USD based service discovery session ID.
+     *
+     * @return A nonzero ID in the range of 1 to 255.
+     * @hide
+     */
+    public int getUsdSessionId() {
+        return mUsdSessionId;
+    }
+
+    /**
+     * Set the USD based service discovery session ID.
+     *
+     * @param sessionId A nonzero ID in the range of 1 to 255.
+     * @hide
+     */
+    public void setUsdSessionId(int sessionId) {
+        mUsdSessionId = sessionId;
     }
 
     /**
@@ -399,6 +432,7 @@ public class WifiP2pServiceResponse implements Parcelable {
         }
         if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()) {
             dest.writeParcelable(mUsdBasedServiceResponse, flags);
+            dest.writeInt(mUsdSessionId);
         }
     }
 
@@ -416,17 +450,19 @@ public class WifiP2pServiceResponse implements Parcelable {
                         data = new byte[len];
                         in.readByteArray(data);
                     }
-                    WifiP2pUsdBasedServiceResponse response = null;
+                    WifiP2pUsdBasedServiceResponse usdServResponse = null;
+                    int usdSessionId = 0;
                     if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()) {
-                        response = in.readParcelable(
+                        usdServResponse = in.readParcelable(
                                 WifiP2pUsdBasedServiceResponse.class.getClassLoader());
+                        usdSessionId = in.readInt();
                     }
                     if (type ==  WifiP2pServiceInfo.SERVICE_TYPE_BONJOUR) {
                         return WifiP2pDnsSdServiceResponse.newInstance(status, transId, dev, data);
                     } else if (type == WifiP2pServiceInfo.SERVICE_TYPE_UPNP) {
                         return WifiP2pUpnpServiceResponse.newInstance(status, transId, dev, data);
-                    } else if (response != null) {
-                        return new WifiP2pServiceResponse(dev, response);
+                    } else if (usdServResponse != null) {
+                        return new WifiP2pServiceResponse(dev, usdServResponse, usdSessionId);
                     }
                     return new WifiP2pServiceResponse(type, status, transId, dev, data);
                 }

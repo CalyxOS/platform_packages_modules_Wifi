@@ -29,6 +29,7 @@ import static com.android.server.wifi.hotspot2.anqp.Constants.ANQPElementType.HS
 import static com.android.server.wifi.hotspot2.anqp.Constants.ANQPElementType.HSWANMetrics;
 
 import android.annotation.NonNull;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.wifi.supplicant.AnqpData;
 import android.hardware.wifi.supplicant.AssociationRejectionData;
@@ -58,6 +59,7 @@ import android.hardware.wifi.supplicant.StaIfaceStatusCode;
 import android.hardware.wifi.supplicant.SupplicantStateChangeData;
 import android.hardware.wifi.supplicant.UsdMessageInfo;
 import android.hardware.wifi.supplicant.UsdServiceDiscoveryInfo;
+import android.hardware.wifi.supplicant.UsdTerminateReasonCode;
 import android.hardware.wifi.supplicant.WpsConfigError;
 import android.hardware.wifi.supplicant.WpsErrorIndication;
 import android.net.MacAddress;
@@ -66,6 +68,8 @@ import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiSsid;
+import android.net.wifi.usd.SessionCallback;
+import android.os.Handler;
 import android.os.Process;
 import android.util.Log;
 
@@ -77,6 +81,7 @@ import com.android.server.wifi.hotspot2.WnmData;
 import com.android.server.wifi.hotspot2.anqp.ANQPElement;
 import com.android.server.wifi.hotspot2.anqp.ANQPParser;
 import com.android.server.wifi.hotspot2.anqp.Constants;
+import com.android.server.wifi.usd.UsdRequestManager;
 import com.android.server.wifi.util.HalAidlUtil;
 import com.android.server.wifi.util.NativeUtil;
 
@@ -103,17 +108,19 @@ class SupplicantStaIfaceCallbackAidlImpl extends ISupplicantStaIfaceCallback.Stu
     // Current SSID in WifiSsid.toString() format. May be translated to UTF-8 if SSID translation
     // is enabled.
     private String mCurrentSsid = null;
+    private final Handler mEventHandler;
 
     SupplicantStaIfaceCallbackAidlImpl(@NonNull SupplicantStaIfaceHalAidlImpl staIfaceHal,
             @NonNull String ifaceName, @NonNull Object lock,
             @NonNull Context context, @NonNull WifiMonitor wifiMonitor,
-            @NonNull SsidTranslator ssidTranslator) {
+            @NonNull SsidTranslator ssidTranslator, Handler eventHandler) {
         mStaIfaceHal = staIfaceHal;
         mIfaceName = ifaceName;
         mLock = lock;
         mContext = context;
         mWifiMonitor = wifiMonitor;
         mSsidTranslator = ssidTranslator;
+        mEventHandler = eventHandler;
     }
 
     @Override
@@ -672,31 +679,147 @@ class SupplicantStaIfaceCallbackAidlImpl extends ISupplicantStaIfaceCallback.Stu
     }
 
     @Override
-    public void onUsdPublishStarted(int cmdId, int publishId) { }
+    public void onUsdPublishStarted(int cmdId, int publishId) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            mStaIfaceHal.getUsdEventsCallback().onUsdPublishStarted(cmdId, publishId);
+        });
+    }
 
     @Override
-    public void onUsdSubscribeStarted(int cmdId, int subscribeId) { }
+    public void onUsdSubscribeStarted(int cmdId, int subscribeId) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            mStaIfaceHal.getUsdEventsCallback().onUsdSubscribeStarted(cmdId, subscribeId);
+        });
+    }
 
     @Override
-    public void onUsdPublishConfigFailed(int cmdId) { }
+    public void onUsdPublishConfigFailed(int cmdId, int errorCode) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            mStaIfaceHal.getUsdEventsCallback().onUsdPublishConfigFailed(cmdId,
+                    convertHalToFrameworkUsdConfigErrorCode(errorCode));
+        });
+    }
 
     @Override
-    public void onUsdSubscribeConfigFailed(int cmdId) { }
+    public void onUsdSubscribeConfigFailed(int cmdId, int errorCode) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            mStaIfaceHal.getUsdEventsCallback().onUsdSubscribeConfigFailed(cmdId,
+                    convertHalToFrameworkUsdConfigErrorCode(errorCode));
+        });
+    }
 
     @Override
-    public void onUsdPublishTerminated(int publishId, int reasonCode) { }
+    public void onUsdPublishTerminated(int publishId, int reasonCode) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            mStaIfaceHal.getUsdEventsCallback().onUsdPublishTerminated(publishId,
+                    convertHalToFrameworkTerminateReasonCode(reasonCode));
+        });
+    }
+
+    private int convertHalToFrameworkTerminateReasonCode(int usdHalReasonCode) {
+        switch (usdHalReasonCode) {
+            case UsdTerminateReasonCode.USER_REQUEST:
+                return SessionCallback.TERMINATION_REASON_USER_INITIATED;
+            default:
+                return SessionCallback.TERMINATION_REASON_UNKNOWN;
+        }
+    }
+
+    @SuppressLint("NewApi")
+    private static @SessionCallback.FailureCode int
+            convertHalToFrameworkUsdConfigErrorCode(int errorCode) {
+        switch (errorCode) {
+            case UsdConfigErrorCode.FAILURE_TIMEOUT:
+                return SessionCallback.FAILURE_TIMEOUT;
+            case UsdConfigErrorCode.FAILURE_NOT_AVAILABLE:
+                return SessionCallback.FAILURE_NOT_AVAILABLE;
+            default:
+                return SessionCallback.FAILURE_UNKNOWN;
+        }
+    }
 
     @Override
-    public void onUsdSubscribeTerminated(int subscribeId, int reasonCode) { }
+    public void onUsdSubscribeTerminated(int subscribeId, int reasonCode) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            mStaIfaceHal.getUsdEventsCallback().onUsdSubscribeTerminated(subscribeId,
+                    convertHalToFrameworkTerminateReasonCode(reasonCode));
+        });
+    }
 
     @Override
-    public void onUsdPublishReplied(UsdServiceDiscoveryInfo info) { }
+    public void onUsdPublishReplied(UsdServiceDiscoveryInfo info) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            UsdRequestManager.UsdHalDiscoveryInfo usdHalDiscoveryInfo =
+                    new UsdRequestManager.UsdHalDiscoveryInfo(info.ownId,
+                            info.peerId,
+                            MacAddress.fromBytes(info.peerMacAddress),
+                            info.serviceSpecificInfo,
+                            info.protoType,
+                            info.isFsd,
+                            info.matchFilter);
+            mStaIfaceHal.getUsdEventsCallback().onUsdPublishReplied(usdHalDiscoveryInfo);
+        });
+    }
 
     @Override
-    public void onUsdServiceDiscovered(UsdServiceDiscoveryInfo info) { }
+    public void onUsdServiceDiscovered(UsdServiceDiscoveryInfo info) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            UsdRequestManager.UsdHalDiscoveryInfo usdHalDiscoveryInfo =
+                    new UsdRequestManager.UsdHalDiscoveryInfo(info.ownId,
+                            info.peerId,
+                            MacAddress.fromBytes(info.peerMacAddress),
+                            info.serviceSpecificInfo,
+                            info.protoType,
+                            info.isFsd,
+                            info.matchFilter);
+            mStaIfaceHal.getUsdEventsCallback().onUsdServiceDiscovered(usdHalDiscoveryInfo);
+        });
+    }
 
     @Override
-    public void onUsdMessageReceived(UsdMessageInfo messageInfo) { }
+    public void onUsdMessageReceived(UsdMessageInfo messageInfo) {
+        mEventHandler.post(() -> {
+            if (mStaIfaceHal.getUsdEventsCallback() == null) {
+                Log.e(TAG, "UsdEventsCallback callback is null");
+                return;
+            }
+            mStaIfaceHal.getUsdEventsCallback().onUsdMessageReceived(messageInfo.ownId,
+                    messageInfo.peerId, MacAddress.fromBytes(messageInfo.peerMacAddress),
+                    messageInfo.message);
+        });
+    }
 
     private @MboOceConstants.BtmResponseStatus int halToFrameworkBtmResponseStatus(int status) {
         switch (status) {

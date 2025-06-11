@@ -20,6 +20,8 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.os.WorkSource;
 
+import androidx.annotation.Keep;
+
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 
@@ -144,6 +146,7 @@ public interface ActiveModeManager {
     /**
      * Method to get the role for a mode manager.
      */
+    @Keep
     @Nullable Role getRole();
 
     /**
@@ -159,6 +162,7 @@ public interface ActiveModeManager {
     /**
      * Method to get the iface name for the mode manager.
      */
+    @Keep
     String getInterfaceName();
 
     /**

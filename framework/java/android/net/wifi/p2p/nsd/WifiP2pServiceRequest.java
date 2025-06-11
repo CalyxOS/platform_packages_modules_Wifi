@@ -83,6 +83,17 @@ public class WifiP2pServiceRequest implements Parcelable {
     private WifiP2pUsdBasedServiceConfig mUsdServiceConfig;
 
     /**
+     * Service discovery request session ID (Seeker ID) for USD based service discovery.
+     * The session ID is used to match the USD based service discovery request/response frames.
+     * A nonzero ID in the range of 1 to 255 is filled in the Service descriptor attribute (SDA) -
+     * instance ID field of the service discovery request frame (Subscribe frame). The responding
+     * device copies this ID in the Service descriptor attribute (SDA) - requester instance ID
+     * field of the service discovery response frame (Publish frame).
+     * Zero by default indicates that the USD session for this service is not running.
+     */
+    private int mUsdSessionId = 0;
+
+    /**
      * This constructor is only used in newInstance().
      *
      * @param protocolType service discovery protocol.
@@ -110,14 +121,17 @@ public class WifiP2pServiceRequest implements Parcelable {
      * @param transId the transaction id
      * @param query The part of service specific query.
      * @param usdConfig The USD based service config.
+     * @param usdSessionId The USD based service discovery request session ID.
      */
     private WifiP2pServiceRequest(int serviceType, int length,
-            int transId, String query, @NonNull WifiP2pUsdBasedServiceConfig usdConfig) {
+            int transId, String query, @NonNull WifiP2pUsdBasedServiceConfig usdConfig,
+            int usdSessionId) {
         mProtocolType = serviceType;
         mLength = length;
         mTransId = transId;
         mQuery = query;
         mUsdServiceConfig = usdConfig;
+        mUsdSessionId = usdSessionId;
     }
 
     /**
@@ -165,6 +179,28 @@ public class WifiP2pServiceRequest implements Parcelable {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Return the USD based service discovery request session ID.
+     * This ID is used to match the USD based service request/response frames.
+     *
+     * @return A nonzero ID in the range of 1 to 255 when the session is running.
+     * @hide
+     */
+    public int getUsdSessionId() {
+        return mUsdSessionId;
+    }
+
+    /**
+     * Set the USD based service discovery request session ID.
+     * Default value is zero.
+     *
+     * @param sessionId nonzero session ID is set when the USD session for this service is started.
+     * @hide
+     */
+    public void setUsdSessionId(int sessionId) {
+        mUsdSessionId = sessionId;
     }
 
     /**
@@ -314,6 +350,7 @@ public class WifiP2pServiceRequest implements Parcelable {
         dest.writeString(mQuery);
         if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()) {
             dest.writeParcelable(mUsdServiceConfig, flags);
+            dest.writeInt(mUsdSessionId);
         }
     }
 
@@ -327,11 +364,14 @@ public class WifiP2pServiceRequest implements Parcelable {
                     int transId = in.readInt();
                     String query = in.readString();
                     WifiP2pUsdBasedServiceConfig config = null;
+                    int usdSessionId = 0;
                     if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()) {
                         config = in.readParcelable(
                                 WifiP2pUsdBasedServiceConfig.class.getClassLoader());
+                        usdSessionId = in.readInt();
                     }
-                    return new WifiP2pServiceRequest(servType, length, transId, query, config);
+                    return new WifiP2pServiceRequest(servType, length, transId, query, config,
+                            usdSessionId);
                 }
                 public WifiP2pServiceRequest[] newArray(int size) {
                     return new WifiP2pServiceRequest[size];

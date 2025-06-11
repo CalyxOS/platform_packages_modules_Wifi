@@ -9,22 +9,6 @@ flag {
 }
 
 flag {
-    name: "p2p_ownership"
-    namespace: "wifi"
-    description: "Control the P2P group ownership feature"
-    bug: "215045910"
-    is_fixed_read_only: true
-}
-
-flag {
-    name: "p2p_dual"
-    namespace: "wifi"
-    description: "Control the dual P2P group feature"
-    bug: "296063280"
-    is_fixed_read_only: true
-}
-
-flag {
     name: "delay_save_to_store"
     namespace: "wifi"
     description: "Control the feature delay the save to store in batch to reduce the blocking time"
@@ -277,5 +261,24 @@ flag {
     namespace: "wifi"
     description: "Updated P2P dialogs"
     bug: "349253691"
+    is_fixed_read_only: true
+}
+
+
+flag {
+    name: "multiple_mld_on_sap_supported"
+    is_exported: false
+    namespace: "wifi"
+    description: "Check driver capability when determining the number of supported MLD"
+    bug: "382023801"
+    is_fixed_read_only: true
+}
+
+flag {
+    name: "monitor_intent_for_all_users"
+    is_exported: false
+    namespace: "wifi"
+    description: "IntentReceiver should monitor intent from all users"
+    bug: "390257834"
     is_fixed_read_only: true
 }

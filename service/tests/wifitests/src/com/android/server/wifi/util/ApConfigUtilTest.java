@@ -1483,7 +1483,8 @@ public class ApConfigUtilTest extends WifiBaseTest {
                 .thenReturn(false);
         /* 11be is disallowed when IEEE80211_BE feature is not supported */
         assertFalse(ApConfigUtil.is11beAllowedForThisConfiguration(mDeviceWiphyCapabilities,
-                mContext, config, true, 0, false));
+                mContext, config, true, 2 /* maximumSupportedMLD */, 0 /* currentExistingMLD */,
+                false));
 
         when(mResources.getBoolean(R.bool.config_wifiSoftapIeee80211beSupported))
                 .thenReturn(true);
@@ -1493,35 +1494,42 @@ public class ApConfigUtilTest extends WifiBaseTest {
                 .thenReturn(true);
         /* 11be is allowed if chip supports single link MLO in bridged mode */
         assertTrue(ApConfigUtil.is11beAllowedForThisConfiguration(mDeviceWiphyCapabilities,
-                mContext, config, true, 0, false));
+                mContext, config, true, 2 /* maximumSupportedMLD */, 0 /* currentExistingMLD */,
+                false));
 
         /* 11be is not allowed if chip doesn't support single link MLO in bridged mode */
         when(mResources.getBoolean(R.bool.config_wifiSoftApSingleLinkMloInBridgedModeSupported))
                 .thenReturn(false);
         assertFalse(ApConfigUtil.is11beAllowedForThisConfiguration(mDeviceWiphyCapabilities,
-                mContext, config, true, 0, false));
+                mContext, config, true, 1 /* maximumSupportedMLD */, 0 /* currentExistingMLD */,
+                false));
 
         when(Flags.mloSap()).thenReturn(true);
         // two MLDs supported, allow 11be on bridged mode.
         when(mResources.getInteger(R.integer.config_wifiSoftApMaxNumberMLDSupported))
                 .thenReturn(2);
         assertTrue(ApConfigUtil.is11beAllowedForThisConfiguration(mDeviceWiphyCapabilities,
-                mContext, config, true, 0, false));
+                mContext, config, true, 2 /* maximumSupportedMLD */, 0 /* currentExistingMLD */,
+                false));
 
-        // One MLD only, disallow 11be on bridged AP.
+        // One MLD supported only, disallow 11be on bridged AP.
         when(mResources.getInteger(R.integer.config_wifiSoftApMaxNumberMLDSupported))
                 .thenReturn(1);
         assertFalse(ApConfigUtil.is11beAllowedForThisConfiguration(mDeviceWiphyCapabilities,
-                mContext, config, true, 0, false));
+                mContext, config, true, 1 /* maximumSupportedMLD */, 0 /* currentExistingMLD */,
+                false));
 
-        // One MLD only, disallow 11be when there is existing 11be AP.
+        // One MLD supported only, disallow 11be when there is existing 11be AP.
         assertFalse(ApConfigUtil.is11beAllowedForThisConfiguration(mDeviceWiphyCapabilities,
-                mContext, config, false, 1, false));
+                mContext, config, false, 1 /* maximumSupportedMLD */, 1 /* currentExistingMLD */,
+                false));
 
-        // One MLD only but chip support MultilinksOnMLD, allow 11be on bridged AP.
+        // One MLD supported only but chip support MultilinksOnMLD, allow 11be on bridged AP.
         assertTrue(ApConfigUtil.is11beAllowedForThisConfiguration(mDeviceWiphyCapabilities,
-                mContext, config, true, 0, true));
+                mContext, config, true, 1 /* maximumSupportedMLD */, 0 /* currentExistingMLD */,
+                true));
     }
+
     @Test
     public void testIs11beDisabledForSecurityType() throws Exception {
         assertTrue(ApConfigUtil.is11beDisabledForSecurityType(SECURITY_TYPE_OPEN));
@@ -1530,5 +1538,42 @@ public class ApConfigUtilTest extends WifiBaseTest {
         assertFalse(ApConfigUtil.is11beDisabledForSecurityType(SECURITY_TYPE_WPA3_SAE_TRANSITION));
         assertFalse(ApConfigUtil.is11beDisabledForSecurityType(SECURITY_TYPE_WPA3_OWE));
         assertTrue(ApConfigUtil.is11beDisabledForSecurityType(SECURITY_TYPE_WPA3_OWE_TRANSITION));
+    }
+
+    @Test
+    public void testGetMaximumSupportedMLD() throws Exception {
+        // Old overlay, no MLD number is configured
+        when(mResources.getInteger(R.integer.config_wifiSoftApMaxNumberMLDSupported))
+                .thenReturn(0);
+        // 1 MLD supported only no matter whether multiple MLD supported.
+        when(mResources.getBoolean(R.bool.config_wifiSoftApSingleLinkMloInBridgedModeSupported))
+                .thenReturn(false);
+        assertEquals(1, ApConfigUtil.getMaximumSupportedMLD(mContext,
+                false /* isMultipleMLMDSupportedOnSap */));
+        assertEquals(1, ApConfigUtil.getMaximumSupportedMLD(mContext,
+                true /* isMultipleMLMDSupportedOnSap */));
+
+        // 2 MLDs supported when overlay is true and no matter whether multiple MLD supported.
+        when(mResources.getBoolean(R.bool.config_wifiSoftApSingleLinkMloInBridgedModeSupported))
+                .thenReturn(true);
+        assertEquals(2, ApConfigUtil.getMaximumSupportedMLD(mContext,
+                false /* isMultipleMLMDSupportedOnSap */));
+        assertEquals(2, ApConfigUtil.getMaximumSupportedMLD(mContext,
+                true /* isMultipleMLMDSupportedOnSap */));
+
+        // New overlay, MLD number is configured. It will check multiple MLD supported value.
+        when(Flags.multipleMldOnSapSupported()).thenReturn(true);
+        when(mResources.getInteger(R.integer.config_wifiSoftApMaxNumberMLDSupported))
+                .thenReturn(2);
+        assertEquals(1, ApConfigUtil.getMaximumSupportedMLD(mContext,
+                false /* isMultipleMLMDSupportedOnSap */));
+        assertEquals(2, ApConfigUtil.getMaximumSupportedMLD(mContext,
+                true /* isMultipleMLMDSupportedOnSap */));
+
+        // Make sure it uses overlay value even though chip supports multiple MLD.
+        when(mResources.getInteger(R.integer.config_wifiSoftApMaxNumberMLDSupported))
+                .thenReturn(1);
+        assertEquals(1, ApConfigUtil.getMaximumSupportedMLD(mContext,
+                true /* isMultipleMLMDSupportedOnSap */));
     }
 }

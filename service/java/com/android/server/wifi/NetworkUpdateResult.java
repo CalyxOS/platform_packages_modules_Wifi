@@ -22,6 +22,8 @@ import static android.net.wifi.WifiManager.AddNetworkResult.STATUS_SUCCESS;
 
 import android.net.wifi.WifiManager;
 
+import androidx.annotation.Keep;
+
 import java.util.Objects;
 
 public class NetworkUpdateResult {
@@ -32,6 +34,7 @@ public class NetworkUpdateResult {
     private final boolean mIsNewNetwork;
     private final @WifiManager.AddNetworkResult.AddNetworkStatusCode int mStatusCode;
 
+    @Keep
     public NetworkUpdateResult(int netId) {
         this(netId, netId != INVALID_NETWORK_ID ? STATUS_SUCCESS : STATUS_ADD_WIFI_CONFIG_FAILURE,
                 false, false, false, false);
@@ -61,6 +64,7 @@ public class NetworkUpdateResult {
         return new NetworkUpdateResult(INVALID_NETWORK_ID);
     }
 
+    @Keep
     public int getNetworkId() {
         return mNetId;
     }
@@ -81,6 +85,7 @@ public class NetworkUpdateResult {
         return mIsNewNetwork;
     }
 
+    @Keep
     public boolean isSuccess() {
         return mStatusCode == STATUS_SUCCESS;
     }

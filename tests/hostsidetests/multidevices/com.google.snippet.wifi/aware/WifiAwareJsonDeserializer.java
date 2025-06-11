@@ -55,6 +55,7 @@ public class WifiAwareJsonDeserializer {
     private static final String SUBSCRIBE_TYPE = "subscribe_type";
     private static final String TERMINATE_NOTIFICATION_ENABLED = "terminate_notification_enabled";
     private static final String MAX_DISTANCE_MM = "max_distance_mm";
+    private static final String MIN_DISTANCE_MM = "min_distance_mm";
     private static final String PAIRING_CONFIG = "pairing_config";
     private static final String TTL_SEC = "TtlSec";
     private static final String INSTANTMODE_ENABLE = "InstantModeEnabled";
@@ -94,7 +95,6 @@ public class WifiAwareJsonDeserializer {
     // Fields for rangingRequest
     private static final String RANGING_REQUEST_PEER_IDS = "peer_ids";
     private static final String RANGING_REQUEST_PEER_MACS = "peer_mac_addresses";
-
 
     private WifiAwareJsonDeserializer() {
     }
@@ -149,6 +149,12 @@ public class WifiAwareJsonDeserializer {
             int maxDistanceMm = jsonObject.getInt(MAX_DISTANCE_MM);
             if (maxDistanceMm > 0) {
                 builder.setMaxDistanceMm(maxDistanceMm);
+            }
+        }
+        if (jsonObject.has(MIN_DISTANCE_MM)) {
+            int minDistanceMm = jsonObject.getInt(MIN_DISTANCE_MM);
+            if (minDistanceMm >= 0) {
+                builder.setMinDistanceMm(minDistanceMm);
             }
         }
         if (jsonObject.has(PAIRING_CONFIG)) {

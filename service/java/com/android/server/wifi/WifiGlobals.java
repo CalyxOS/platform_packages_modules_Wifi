@@ -25,6 +25,8 @@ import android.util.ArraySet;
 import android.util.Log;
 import android.util.SparseArray;
 
+import androidx.annotation.Keep;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.WifiBlocklistMonitor.CarrierSpecificEapFailureConfig;
@@ -189,6 +191,7 @@ public class WifiGlobals {
     }
 
     /** Get the interval between RSSI polls, in milliseconds. */
+    @Keep
     public int getPollRssiIntervalMillis() {
         return mPollRssiIntervalMillis.get();
     }
@@ -221,6 +224,7 @@ public class WifiGlobals {
     }
 
     /** Sets whether CMD_IP_REACHABILITY_LOST events should trigger disconnects. */
+    @Keep
     public void setIpReachabilityDisconnectEnabled(boolean enabled) {
         mIpReachabilityDisconnectEnabled.set(enabled);
     }

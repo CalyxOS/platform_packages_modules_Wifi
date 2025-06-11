@@ -19,7 +19,10 @@ package com.android.server.wifi.hal;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.hardware.wifi.Akm;
+import android.hardware.wifi.CipherSuite;
 import android.net.MacAddress;
+import android.net.wifi.rtt.PasnConfig;
 import android.net.wifi.rtt.RangingRequest;
 import android.net.wifi.rtt.RangingResult;
 import android.util.Log;
@@ -116,6 +119,10 @@ public class WifiRttController {
         public boolean ntbInitiatorSupported;
         // Whether IEEE 802.11az Non-Trigger-based (non-TB) responder mode is supported.
         public boolean ntbResponderSupported;
+         // Bitmap of AKM values indicating the set of supported AKMs.
+        public @PasnConfig.AkmType int akmsSupported;
+         // Bitmap of cipher values indicating the set of supported pairwise cipher suites.
+        public @PasnConfig.Cipher int cipherSuitesSupported;
         // Whether secure HE-LTF (Long Training Field) is supported
         public boolean secureHeLtfSupported;
         // Whether ranging frame protection is supported
@@ -176,8 +183,61 @@ public class WifiRttController {
             rangingFrameProtectionSupported = rttHalCapabilities.rangingFrameProtectionSupported;
             maxSupportedSecureHeLtfProtocolVersion =
                     rttHalCapabilities.maxSupportedSecureHeLtfProtocolVersion;
+            akmsSupported = convertAkmsToFramework(rttHalCapabilities.akmsSupported);
+            cipherSuitesSupported = convertCiphersToFramework(
+                    rttHalCapabilities.cipherSuitesSupported);
         }
     }
+
+    @PasnConfig.Cipher
+    private static int convertCiphersToFramework(long ciphersSupported) {
+        @PasnConfig.Cipher int ciphers = PasnConfig.CIPHER_NONE;
+        if ((ciphersSupported & CipherSuite.GCMP_256) != 0) {
+            ciphers |= PasnConfig.CIPHER_GCMP_256;
+        }
+        if ((ciphersSupported & CipherSuite.GCMP_128) != 0) {
+            ciphers |= PasnConfig.CIPHER_GCMP_128;
+        }
+        if ((ciphersSupported & CipherSuite.CCMP_256) != 0) {
+            ciphers |= PasnConfig.CIPHER_CCMP_256;
+        }
+        if ((ciphersSupported & CipherSuite.CCMP_128) != 0) {
+            ciphers |= PasnConfig.CIPHER_CCMP_128;
+        }
+        return ciphers;
+    }
+
+    @PasnConfig.AkmType
+    private static int convertAkmsToFramework(long akmsSupported) {
+        @PasnConfig.AkmType int akms = PasnConfig.AKM_NONE;
+        if ((akmsSupported & Akm.FT_EAP_SHA384) != 0) {
+            akms |= PasnConfig.AKM_FT_EAP_SHA384;
+        }
+        if ((akmsSupported & Akm.FILS_EAP_SHA384) != 0) {
+            akms |= PasnConfig.AKM_FILS_EAP_SHA384;
+        }
+        if ((akmsSupported & Akm.FILS_EAP_SHA256) != 0) {
+            akms |= PasnConfig.AKM_FILS_EAP_SHA256;
+        }
+        if ((akmsSupported & Akm.FT_EAP_SHA256) != 0) {
+            akms |= PasnConfig.AKM_FT_EAP_SHA256;
+        }
+        if ((akmsSupported & Akm.FT_PSK_SHA384) != 0) {
+            akms |= PasnConfig.AKM_FT_PSK_SHA384;
+        }
+        if ((akmsSupported & Akm.FT_PSK_SHA256) != 0) {
+            akms |= PasnConfig.AKM_FT_PSK_SHA256;
+        }
+        if ((akmsSupported & Akm.SAE) != 0) {
+            akms |= PasnConfig.AKM_SAE;
+        }
+        if ((akmsSupported & Akm.PASN) != 0) {
+            akms |= PasnConfig.AKM_PASN;
+        }
+        return akms;
+    }
+
+
 
     /**
      * Callback to receive ranging results.
@@ -285,5 +345,52 @@ public class WifiRttController {
         if (mWifiRttController != null) {
             mWifiRttController.dump(pw);
         }
+    }
+
+    /**
+     * Get optimum burst duration corresponding to a burst size.
+     *
+     * IEEE 802.11 spec, Section 11.21.6.3 Fine timing measurement procedure negotiation, burst
+     * duration is defined as
+     *
+     * Burst duration = (N_FTMPB  * (K + 1)) – 1) * T_MDFTM + T_FTM + aSIFSTime + T_Ack, where
+     *  - N_FTMPB is the value of the FTMs Per Burst subfield
+     *  - K is the maximum number of Fine Timing Measurement frame retransmissions the
+     *    responding STA might attempt
+     *  - T_MDFTM is the duration indicated by the Min Delta FTM subfield of the Fine Timing
+     *    Measurement Parameters field of the initial Fine Timing Measurement frame (FTM_1)
+     *  - T_FTM is the duration of the initial Fine Timing Measurement frame if the FTMs Per Burst
+     *    subfield of the Fine Timing Measurement Parameters field of FTM_1 is set to 1,
+     *    and the duration of the non-initial Fine Timing Measurement frame otherwise
+     *    T_Ack is the duration of the Ack frame expected as a response
+     *
+     * Since many of the parameters are dependent on the chip and the vendor software, framework is
+     * doing a simple conversion with experimented values. Vendor Software may override the burst
+     * duration with more optimal values.
+     *
+     * Section '9.4.2.167 Fine Timing Measurement Parameters element' defines Burst Duration
+     * subfield encoding as,
+     * +--------------------+
+     * |Value|   Represents |
+     * +--------------------+
+     * | 0-1 |  Reserved    |
+     * |  2  |    250 us    |
+     * |  3  |    500 us    |
+     * |  4  |      1 ms    |
+     * |  5  |      2 ms    |
+     * |  6  |      4 ms    |
+     * |  7  |      8 ms    |
+     * |  8  |     16 ms    |
+     * |  9  |     32 ms    |
+     * | 10  |     64 ms    |
+     * | 11  |    128 ms    |
+     * |12-14|  Reserved    |
+     * | 15  | No Preference|
+     * +-----+--------------+
+     */
+    public static int getOptimumBurstDuration(int burstSize) {
+        if (burstSize <= 8) return 9; // 32 ms
+        if (burstSize <= 24) return 10; // 64 ms
+        return 11; // 128 ms
     }
 }

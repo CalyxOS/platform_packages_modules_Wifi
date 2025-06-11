@@ -438,26 +438,26 @@ public class SupplicantP2pIfaceCallbackHidlImpl extends ISupplicantP2pIfaceCallb
 
         if ((configMethods & WpsConfigMethods.PUSHBUTTON) != 0) {
             if (isRequest) {
-                event.event = WifiP2pProvDiscEvent.PBC_REQ;
+                event.event = WifiP2pProvDiscEvent.WPS_PBC_REQ;
                 mMonitor.broadcastP2pProvisionDiscoveryPbcRequest(mInterface, event);
             } else {
-                event.event = WifiP2pProvDiscEvent.PBC_RSP;
+                event.event = WifiP2pProvDiscEvent.WPS_PBC_RSP;
                 mMonitor.broadcastP2pProvisionDiscoveryPbcResponse(mInterface, event);
             }
         } else if (!isRequest && (configMethods & WpsConfigMethods.KEYPAD) != 0) {
-            event.event = WifiP2pProvDiscEvent.SHOW_PIN;
-            event.pin = generatedPin;
+            event.event = WifiP2pProvDiscEvent.WPS_SHOW_PIN;
+            event.wpsPin = generatedPin;
             mMonitor.broadcastP2pProvisionDiscoveryShowPin(mInterface, event);
         } else if (!isRequest && (configMethods & WpsConfigMethods.DISPLAY) != 0) {
-            event.event = WifiP2pProvDiscEvent.ENTER_PIN;
-            event.pin = generatedPin;
+            event.event = WifiP2pProvDiscEvent.WPS_ENTER_PIN;
+            event.wpsPin = generatedPin;
             mMonitor.broadcastP2pProvisionDiscoveryEnterPin(mInterface, event);
         } else if (isRequest && (configMethods & WpsConfigMethods.DISPLAY) != 0) {
-            event.event = WifiP2pProvDiscEvent.SHOW_PIN;
-            event.pin = generatedPin;
+            event.event = WifiP2pProvDiscEvent.WPS_SHOW_PIN;
+            event.wpsPin = generatedPin;
             mMonitor.broadcastP2pProvisionDiscoveryShowPin(mInterface, event);
         } else if (isRequest && (configMethods & WpsConfigMethods.KEYPAD) != 0) {
-            event.event = WifiP2pProvDiscEvent.ENTER_PIN;
+            event.event = WifiP2pProvDiscEvent.WPS_ENTER_PIN;
             mMonitor.broadcastP2pProvisionDiscoveryEnterPin(mInterface, event);
         } else {
             Log.e(TAG, "Unsupported config methods: " + configMethods);

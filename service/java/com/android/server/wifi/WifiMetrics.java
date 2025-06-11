@@ -56,8 +56,10 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.ConnectivityManager;
+import android.net.MacAddress;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.wifi.DeauthenticationReasonCode;
 import android.net.wifi.EAPConstants;
 import android.net.wifi.IOnWifiUsabilityStatsListener;
 import android.net.wifi.MloLink;
@@ -144,6 +146,7 @@ import com.android.server.wifi.proto.nano.WifiMetricsProto.SoftApConnectedClient
 import com.android.server.wifi.proto.nano.WifiMetricsProto.StaEvent;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.StaEvent.ConfigInfo;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.TargetNetworkInfo;
+import com.android.server.wifi.proto.nano.WifiMetricsProto.TrainingData;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.UserActionEvent;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.UserReactionToApprovalUiEvent;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.UserReactionToApprovalUiEvent.UserReaction;
@@ -156,8 +159,8 @@ import com.android.server.wifi.proto.nano.WifiMetricsProto.WifiNetworkSuggestion
 import com.android.server.wifi.proto.nano.WifiMetricsProto.WifiStatus;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.WifiToWifiSwitchStats;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.WifiToggleStats;
-import com.android.server.wifi.proto.nano.WifiMetricsProto.WifiUsabilityStats;  // This contains a time series of WifiUsabilityStatsEntry along with some metadata, such as the label of the time series or trigger type.
 import com.android.server.wifi.proto.nano.WifiMetricsProto.WifiUsabilityStatsEntry;  // This contains all the stats for a single point in time.
+import com.android.server.wifi.proto.nano.WifiMetricsProto.WifiUsabilityStatsTraining;
 import com.android.server.wifi.rtt.RttMetrics;
 import com.android.server.wifi.scanner.KnownBandsChannelHelper;
 import com.android.server.wifi.util.InformationElementUtil;
@@ -168,7 +171,6 @@ import com.android.server.wifi.util.IntHistogram;
 import com.android.server.wifi.util.MetricsUtils;
 import com.android.server.wifi.util.ObjectCounter;
 import com.android.server.wifi.util.StringUtil;
-import com.android.wifi.flags.Flags;
 import com.android.wifi.resources.R;
 
 import org.json.JSONArray;
@@ -178,6 +180,8 @@ import org.json.JSONObject;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -244,15 +248,7 @@ public class WifiMetrics {
     public static final int MIN_DATA_STALL_WAIT_MS = 120 * 1000; // 2 minutes
     // Max number of WifiUsabilityStatsEntry elements to store in the ringbuffer.
     public static final int MAX_WIFI_USABILITY_STATS_ENTRIES_RING_BUFFER_SIZE = 80;
-    // Max number of WifiUsabilityStats records to store for each type.
-    public static final int MAX_WIFI_USABILITY_STATS_RECORDS_PER_TYPE = 10;
-    // Max number of WifiUsabilityStats per labeled type to upload to server
-    public static final int MAX_WIFI_USABILITY_STATS_RECORDS_PER_TYPE_TO_UPLOAD = 2;
-    // One WifiGood WifiUsabilityStats record will be created each time we see this many
-    // WifiUsabilityStatsEntry time samples.
-    public static final int NUM_WIFI_USABILITY_STATS_ENTRIES_PER_WIFI_GOOD = 100;
-    // At most, one WifiGood WifiUsabilityStats record will be created during this time period.
-    public static final int MIN_WIFI_GOOD_USABILITY_STATS_PERIOD_MS = 1000 * 3600; // 1 hour
+    public static final int MAX_WIFI_USABILITY_STATS_TRAINING_SIZE = 10;
     public static final int PASSPOINT_DEAUTH_IMMINENT_SCOPE_ESS = 0;
     public static final int PASSPOINT_DEAUTH_IMMINENT_SCOPE_BSS = 1;
     public static final int COUNTRY_CODE_CONFLICT_WIFI_SCAN = -1;
@@ -280,6 +276,8 @@ public class WifiMetrics {
     public static final int MIN_DOWNSTREAM_BANDWIDTH_KBPS = 1000;
     public static final int MIN_UPSTREAM_BANDWIDTH_KBPS = 1000;
     public static final int INVALID_SPEED = -1;
+    public static final long MILLIS_IN_A_SECOND = 1000;
+    public static final long MILLIS_IN_AN_HOUR = 3600 * 1000;
 
     private Clock mClock;
     private boolean mScreenOn;
@@ -500,14 +498,12 @@ public class WifiMetrics {
     @VisibleForTesting
     public final LinkedList<WifiUsabilityStatsEntry> mWifiUsabilityStatsEntriesRingBuffer =
             new LinkedList<>();
-    // One WifiUsabilityStats contains a single time series of WifiUsabilityStatsEntry along with
-    // some metadata. These LinkedList's below contain sets of time series that are labeled as
-    // either 'good' or 'bad'.
-    private final LinkedList<WifiUsabilityStats> mWifiUsabilityStatsListBad = new LinkedList<>();
-    private final LinkedList<WifiUsabilityStats> mWifiUsabilityStatsListGood = new LinkedList<>();
-    // Counts the number of WifiUsabilityStatsEntry's that we have seen so that we only create a
-    // WifiUsabilityStats every NUM_WIFI_USABILITY_STATS_ENTRIES_PER_WIFI_GOOD time samples.
-    private int mWifiUsabilityStatsEntryCounter = 0;
+    // Each WifiUsabilityStatsTraining instance contains a list of WifiUsabilityStatsEntry objects,
+    // representing a time series of WiFi usability statistics recorded within a specific data
+    // capture period. It also includes information about the type of data capture and the duration
+    // of the capture period.
+    public final List<WifiUsabilityStatsTraining> mWifiUsabilityStatsTrainingExamples =
+            new ArrayList<>();
     private final Random mRand = new Random();
     private final RemoteCallbackList<IOnWifiUsabilityStatsListener> mOnWifiUsabilityListeners;
 
@@ -1249,6 +1245,8 @@ public class WifiMetrics {
         private int mPhase2Method;
         private int mPasspointRoamingType;
         private int mTofuConnectionState;
+        private long mL2ConnectingDuration;
+        private long mL3ConnectingDuration;
 
         @VisibleForTesting
         ConnectionEvent() {
@@ -2048,6 +2046,8 @@ public class WifiMetrics {
                     mFirstConnectionAfterBoot;
             currentConnectionEvent.mRole = role;
             currentConnectionEvent.mUid = uid;
+            currentConnectionEvent.mL2ConnectingDuration = 0;
+            currentConnectionEvent.mL3ConnectingDuration = 0;
             mFirstConnectionAfterBoot = false;
             mConnectionEventList.add(currentConnectionEvent);
             mScanResultRssiTimestampMillis = -1;
@@ -2266,6 +2266,26 @@ public class WifiMetrics {
     }
 
     /**
+     * Log L2 and L3 connection transition time
+     *
+     * @param ifaceName interface name for this connection event
+     * @param l2ConnectingDuration Time duration between L2ConnectState to L3ProvisioningState
+     * @param l3ConnectingDuration Time duration between L3ProvisioningState to mL3ConnectedState
+     */
+    public void reportConnectingDuration(
+            String ifaceName,
+            long l2ConnectingDuration,
+            long l3ConnectingDuration) {
+        synchronized (mLock) {
+            ConnectionEvent currentConnectionEvent = mCurrentConnectionEventPerIface.get(ifaceName);
+            if (currentConnectionEvent != null) {
+                currentConnectionEvent.mL2ConnectingDuration = l2ConnectingDuration;
+                currentConnectionEvent.mL3ConnectingDuration = l3ConnectingDuration;
+            }
+        }
+    }
+
+    /**
      * End a Connection event record. Call when wifi connection attempt succeeds or fails.
      * If a Connection event has not been started and is active when .end is called, then this
      * method will do nothing.
@@ -2336,7 +2356,10 @@ public class WifiMetrics {
                         currentConnectionEvent.mPasspointRoamingType,
                         currentConnectionEvent.mCarrierId,
                         currentConnectionEvent.mTofuConnectionState,
-                        currentConnectionEvent.mUid);
+                        currentConnectionEvent.mUid,
+                        frequency,
+                        currentConnectionEvent.mL2ConnectingDuration,
+                        currentConnectionEvent.mL3ConnectingDuration);
 
                 if (connectionSucceeded) {
                     reportRouterCapabilities(currentConnectionEvent.mRouterFingerPrint);
@@ -4963,8 +4986,8 @@ public class WifiMetrics {
                     eventLine.append(",client_control_is_enabled=" + event.clientControlIsEnabled);
                     pw.println(eventLine.toString());
                 }
-
-                mWifiPowerMetrics.dump(pw);
+                // TODO(b/393985164): Temporary remove this from dump.
+                // mWifiPowerMetrics.dump(pw);
                 mWifiWakeMetrics.dump(pw);
 
                 pw.println("mWifiLogProto.isMacRandomizationOn="
@@ -4999,6 +5022,17 @@ public class WifiMetrics {
                 pw.println("mWifiUsabilityStatsEntriesRingBuffer:");
                 for (WifiUsabilityStatsEntry stats : mWifiUsabilityStatsEntriesRingBuffer) {
                     printWifiUsabilityStatsEntry(pw, stats);
+                }
+
+                pw.println("mWifiUsabilityStatsTrainingExamples:");
+                for (WifiUsabilityStatsTraining statsTraining
+                        : mWifiUsabilityStatsTrainingExamples) {
+                    pw.println("\ndata_capture_type=" + statsTraining.dataCaptureType);
+                    pw.println("\ncapture_start_timestamp_secs="
+                            + statsTraining.captureStartTimestampSecs);
+                    for (WifiUsabilityStatsEntry stats : statsTraining.trainingData.stats) {
+                        printWifiUsabilityStatsEntry(pw, stats);
+                    }
                 }
 
                 pw.println("mMobilityStatePnoStatsMap:");
@@ -5768,6 +5802,13 @@ public class WifiMetrics {
             }
             mWifiLogProto.hardwareRevision = SystemProperties.get("ro.boot.revision", "");
 
+            mWifiLogProto.wifiUsabilityStatsTraining =
+                    new WifiUsabilityStatsTraining[mWifiUsabilityStatsTrainingExamples.size()];
+            for (int i = 0; i < mWifiUsabilityStatsTrainingExamples.size(); i++) {
+                mWifiLogProto.wifiUsabilityStatsTraining[i] =
+                        mWifiUsabilityStatsTrainingExamples.get(i);
+            }
+            mWifiUsabilityStatsTrainingExamples.clear();
             mWifiLogProto.mobilityStatePnoStatsList =
                     new DeviceMobilityStatePnoScanStats[mMobilityStatePnoStatsMap.size()];
             for (int i = 0; i < mMobilityStatePnoStatsMap.size(); i++) {
@@ -6103,13 +6144,9 @@ public class WifiMetrics {
             mWifiIsUnusableList.clear();
             mInstalledPasspointProfileTypeForR1.clear();
             mInstalledPasspointProfileTypeForR2.clear();
-            mWifiUsabilityStatsListGood.clear();
-            mWifiUsabilityStatsListBad.clear();
-            mWifiUsabilityStatsEntriesRingBuffer.clear();
             mMobilityStatePnoStatsMap.clear();
             mWifiP2pMetrics.clear();
             mDppMetrics.clear();
-            mWifiUsabilityStatsEntryCounter = 0;
             mLastBssidPerIfaceMap.clear();
             mLastFrequencyPerIfaceMap.clear();
             mSeqNumInsideFramework = 0;
@@ -7144,10 +7181,6 @@ public class WifiMetrics {
         }
     }
 
-    public boolean isWiFiScorerNewStatsCollected() {
-        return Flags.wifiScorerNewStatsCollection();
-    }
-
     /**
      * If isFullCapture is true, capture everything in ring buffer
      *
@@ -7163,11 +7196,74 @@ public class WifiMetrics {
      */
     public int storeCapturedData(int triggerType, boolean isFullCapture,
             long triggerStartTimeMillis, long triggerStopTimeMillis) {
-        // TODO: Implement how to extract WifiUsabilityStatsEntries from ring buffer whose
-        // timestamps are within [triggerStartTimeMillis, triggerStopTimeMillis]
-        Log.d(TAG, "storeCapturedData: triggerType=" + triggerType
-                + ", isFullCapture=" + isFullCapture);
-        return 0;
+        synchronized (mLock) {
+            Instant bootTime = Instant.now()
+                    .minus(Duration.ofMillis(mClock.getElapsedSinceBootMillis()));
+            Log.d(TAG, "storeCapturedData: triggerType=" + triggerType
+                    + ", isFullCapture=" + isFullCapture
+                    + ", triggerStartTimeMillis=" + triggerStartTimeMillis
+                    + ", triggerStartTime="
+                    + bootTime.plus(Duration.ofMillis(triggerStartTimeMillis))
+                    + ", triggerStopTimeMillis=" + triggerStopTimeMillis
+                    + ", triggerStopTime="
+                    + bootTime.plus(Duration.ofMillis(triggerStopTimeMillis)));
+
+            // Validate triggerStartTimeMillis and triggerStopTimeMillis in non full-capture case
+            if (!isFullCapture && ((triggerStartTimeMillis < 0 || triggerStopTimeMillis < 0
+                    || triggerStopTimeMillis <= triggerStartTimeMillis))) {
+                return 1;
+            }
+
+            Instant now = mClock.getCurrentInstant();
+            Duration durationSinceBoot = Duration.ofMillis(mClock.getElapsedSinceBootMillis());
+
+            WifiUsabilityStatsTraining wifiUsabilityStatsTraining =
+                    new WifiUsabilityStatsTraining();
+            while (mWifiUsabilityStatsTrainingExamples.size()
+                    >= MAX_WIFI_USABILITY_STATS_TRAINING_SIZE) {
+                mWifiUsabilityStatsTrainingExamples.remove(0);
+            }
+            wifiUsabilityStatsTraining.dataCaptureType = triggerType;
+
+            long capturePeriodStartTime = triggerStartTimeMillis;
+            long capturePeriodStopTime = triggerStopTimeMillis;
+
+            if (isFullCapture) {
+                capturePeriodStartTime = mWifiUsabilityStatsEntriesRingBuffer.size() > 0
+                    ? mWifiUsabilityStatsEntriesRingBuffer.get(0).timeStampMs :
+                    0;
+                capturePeriodStopTime = mWifiUsabilityStatsEntriesRingBuffer.size() > 0
+                    ? mWifiUsabilityStatsEntriesRingBuffer.get(
+                        mWifiUsabilityStatsEntriesRingBuffer.size() - 1).timeStampMs :
+                    durationSinceBoot.toMillis();
+            }
+
+            wifiUsabilityStatsTraining.captureStartTimestampSecs =
+                    now.minus(durationSinceBoot)
+                        .plus(Duration.ofMillis(capturePeriodStartTime))
+                        .truncatedTo(ChronoUnit.HOURS)
+                        .getEpochSecond();
+            wifiUsabilityStatsTraining.storeTimeOffsetMs =
+                        durationSinceBoot.toMillis() - capturePeriodStopTime;
+
+            // If isFullCapture is true, store everything in ring buffer
+            // If isFullCapture is false, Store WifiUsabilityStatsEntries within capture period
+            TrainingData trainingData = new TrainingData();
+            List<WifiUsabilityStatsEntry> trainingDataList = new ArrayList<>();
+            for (WifiUsabilityStatsEntry currStats : mWifiUsabilityStatsEntriesRingBuffer) {
+                if (isFullCapture || (currStats.timeStampMs >= triggerStartTimeMillis
+                        && currStats.timeStampMs < triggerStopTimeMillis)) {
+                    WifiUsabilityStatsEntry trainingStats =
+                            createNewWifiUsabilityStatsEntry(currStats, capturePeriodStartTime);
+                    trainingDataList.add(trainingStats);
+                }
+            }
+            trainingData.stats = trainingDataList.toArray(new WifiUsabilityStatsEntry[0]);
+            wifiUsabilityStatsTraining.trainingData = trainingData;
+
+            mWifiUsabilityStatsTrainingExamples.add(wifiUsabilityStatsTraining);
+            return 0;
+        }
     }
 
     /**
@@ -7178,9 +7274,9 @@ public class WifiMetrics {
      */
     public void updateWifiUsabilityStatsEntries(String ifaceName, WifiInfo info,
             WifiLinkLayerStats stats, boolean oneshot, int statusDataStall) {
-        // This is only collected for primary STA currently because RSSI polling is disabled for
-        // non-primary STAs.
         synchronized (mLock) {
+            // This is only collected for primary STA currently because RSSI polling is disabled for
+            // non-primary STAs.
             if (info == null) {
                 return;
             }
@@ -7198,208 +7294,214 @@ public class WifiMetrics {
                     < MAX_WIFI_USABILITY_STATS_ENTRIES_RING_BUFFER_SIZE
                     ? new WifiUsabilityStatsEntry() : mWifiUsabilityStatsEntriesRingBuffer.remove()
                     .clear();
-            if (isWiFiScorerNewStatsCollected()) {
-                SparseArray<MloLink> mloLinks = new SparseArray<>();
-                for (MloLink link: info.getAffiliatedMloLinks()) {
-                    mloLinks.put(link.getLinkId(), link);
-                }
-                if (stats.links != null && stats.links.length > 0) {
-                    int numLinks = stats.links.length;
-                    wifiUsabilityStatsEntry.wifiLinkCount = numLinks;
-                    wifiUsabilityStatsEntry.linkStats = new LinkStats[numLinks];
-                    for (int i = 0; i < numLinks; ++i) {
-                        LinkStats linkStats = new LinkStats();
-                        WifiLinkLayerStats.LinkSpecificStats link = stats.links[i];
-                        linkStats.linkId = link.link_id;
-                        linkStats.state = link.state;
-                        linkStats.radioId = link.radio_id;
-                        linkStats.frequencyMhz = link.frequencyMhz;
-                        linkStats.beaconRx = link.beacon_rx;
-                        linkStats.rssiMgmt = link.rssi_mgmt;
-                        linkStats.timeSliceDutyCycleInPercent = link.timeSliceDutyCycleInPercent;
-                        linkStats.rssi = (mloLinks.size() > 0) ? mloLinks.get(link.link_id,
-                                new MloLink()).getRssi() : info.getRssi();
-                        linkStats.txLinkspeed = (mloLinks.size() > 0) ? mloLinks.get(link.link_id,
-                                new MloLink()).getTxLinkSpeedMbps() : info.getTxLinkSpeedMbps();
-                        linkStats.rxLinkspeed = (mloLinks.size() > 0) ? mloLinks.get(link.link_id,
-                                new MloLink()).getRxLinkSpeedMbps() : info.getRxLinkSpeedMbps();
-                        WifiLinkLayerStats.ChannelStats channlStatsEntryOnFreq =
-                                stats.channelStatsMap.get(link.frequencyMhz);
-                        if (channlStatsEntryOnFreq != null) {
-                            linkStats.channelWidth = channlStatsEntryOnFreq.channelWidth;
-                            linkStats.centerFreqFirstSeg =
-                                channlStatsEntryOnFreq.frequencyFirstSegment;
-                            linkStats.centerFreqSecondSeg =
-                                channlStatsEntryOnFreq.frequencySecondSegment;
-                            linkStats.onTimeInMs = channlStatsEntryOnFreq.radioOnTimeMs;
-                            linkStats.ccaBusyTimeInMs = channlStatsEntryOnFreq.ccaBusyTimeMs;
-                        }
-                        linkStats.contentionTimeStats =
-                                new ContentionTimeStats[NUM_WME_ACCESS_CATEGORIES];
-                        linkStats.packetStats = new PacketStats[NUM_WME_ACCESS_CATEGORIES];
-                        for (int ac = 0; ac < NUM_WME_ACCESS_CATEGORIES; ac++) {
-                            ContentionTimeStats contentionTimeStats = new ContentionTimeStats();
-                            PacketStats packetStats = new PacketStats();
-                            switch (ac) {
-                                case ContentionTimeStats.WME_ACCESS_CATEGORY_BE:
-                                    contentionTimeStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_BE;
-                                    contentionTimeStats.contentionTimeMinMicros =
-                                            stats.contentionTimeMinBeInUsec;
-                                    contentionTimeStats.contentionTimeMaxMicros =
-                                            stats.contentionTimeMaxBeInUsec;
-                                    contentionTimeStats.contentionTimeAvgMicros =
-                                            stats.contentionTimeAvgBeInUsec;
-                                    contentionTimeStats.contentionNumSamples =
-                                            stats.contentionNumSamplesBe;
-                                    packetStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_BE;
-                                    packetStats.txSuccess = link.txmpdu_be;
-                                    packetStats.txRetries = link.retries_be;
-                                    packetStats.txBad = link.lostmpdu_be;
-                                    packetStats.rxSuccess = link.rxmpdu_be;
-                                    break;
-                                case ContentionTimeStats.WME_ACCESS_CATEGORY_BK:
-                                    contentionTimeStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_BK;
-                                    contentionTimeStats.contentionTimeMinMicros =
-                                            stats.contentionTimeMinBkInUsec;
-                                    contentionTimeStats.contentionTimeMaxMicros =
-                                            stats.contentionTimeMaxBkInUsec;
-                                    contentionTimeStats.contentionTimeAvgMicros =
-                                            stats.contentionTimeAvgBkInUsec;
-                                    contentionTimeStats.contentionNumSamples =
-                                            stats.contentionNumSamplesBk;
-                                    packetStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_BK;
-                                    packetStats.txSuccess = link.txmpdu_bk;
-                                    packetStats.txRetries = link.retries_bk;
-                                    packetStats.txBad = link.lostmpdu_bk;
-                                    packetStats.rxSuccess = link.rxmpdu_bk;
-                                    break;
-                                case ContentionTimeStats.WME_ACCESS_CATEGORY_VI:
-                                    contentionTimeStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_VI;
-                                    contentionTimeStats.contentionTimeMinMicros =
-                                            stats.contentionTimeMinViInUsec;
-                                    contentionTimeStats.contentionTimeMaxMicros =
-                                            stats.contentionTimeMaxViInUsec;
-                                    contentionTimeStats.contentionTimeAvgMicros =
-                                            stats.contentionTimeAvgViInUsec;
-                                    contentionTimeStats.contentionNumSamples =
-                                            stats.contentionNumSamplesVi;
-                                    packetStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_VI;
-                                    packetStats.txSuccess = link.txmpdu_vi;
-                                    packetStats.txRetries = link.retries_vi;
-                                    packetStats.txBad = link.lostmpdu_vi;
-                                    packetStats.rxSuccess = link.rxmpdu_vi;
-                                    break;
-                                case ContentionTimeStats.WME_ACCESS_CATEGORY_VO:
-                                    contentionTimeStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_VO;
-                                    contentionTimeStats.contentionTimeMinMicros =
-                                            stats.contentionTimeMinVoInUsec;
-                                    contentionTimeStats.contentionTimeMaxMicros =
-                                            stats.contentionTimeMaxVoInUsec;
-                                    contentionTimeStats.contentionTimeAvgMicros =
-                                            stats.contentionTimeAvgVoInUsec;
-                                    contentionTimeStats.contentionNumSamples =
-                                            stats.contentionNumSamplesVo;
-                                    packetStats.accessCategory =
-                                            ContentionTimeStats.WME_ACCESS_CATEGORY_VO;
-                                    packetStats.txSuccess = link.txmpdu_vo;
-                                    packetStats.txRetries = link.retries_vo;
-                                    packetStats.txBad = link.lostmpdu_vo;
-                                    packetStats.rxSuccess = link.rxmpdu_vo;
-                                    break;
-                                default:
-                                    Log.e(TAG, "Unknown WME Access Category: " + ac);
-                            }
-                            linkStats.contentionTimeStats[ac] = contentionTimeStats;
-                            linkStats.packetStats[ac] = packetStats;
-                        }
-                        if (link.peerInfo != null && link.peerInfo.length > 0) {
-                            int numPeers = link.peerInfo.length;
-                            linkStats.peerInfo = new PeerInfo[numPeers];
-                            for (int peerIndex = 0; peerIndex < numPeers; ++peerIndex) {
-                                PeerInfo peerInfo = new PeerInfo();
-                                WifiLinkLayerStats.PeerInfo curPeer = link.peerInfo[peerIndex];
-                                peerInfo.staCount = curPeer.staCount;
-                                peerInfo.chanUtil = curPeer.chanUtil;
-                                if (curPeer.rateStats != null && curPeer.rateStats.length > 0) {
-                                    int numRates = curPeer.rateStats.length;
-                                    peerInfo.rateStats = new RateStats[numRates];
-                                    for (int rateIndex = 0; rateIndex < numRates; rateIndex++) {
-                                        RateStats rateStats = new RateStats();
-                                        WifiLinkLayerStats.RateStat curRate =
-                                                curPeer.rateStats[rateIndex];
-                                        rateStats.preamble = curRate.preamble;
-                                        rateStats.nss = curRate.nss;
-                                        rateStats.bw = curRate.bw;
-                                        rateStats.rateMcsIdx = curRate.rateMcsIdx;
-                                        rateStats.bitRateInKbps = curRate.bitRateInKbps;
-                                        rateStats.txMpdu = curRate.txMpdu;
-                                        rateStats.rxMpdu = curRate.rxMpdu;
-                                        rateStats.mpduLost = curRate.mpduLost;
-                                        rateStats.retries = curRate.retries;
-                                        peerInfo.rateStats[rateIndex] = rateStats;
-                                    }
-                                }
-                                linkStats.peerInfo[peerIndex] = peerInfo;
-                            }
-                        }
-                        List<ScanResultWithSameFreq> scanResultsWithSameFreq = new ArrayList<>();
-                        if (link.scan_results_same_freq != null
-                                && link.scan_results_same_freq.size() > 0) {
-                            for (int scanResultsIndex = 0; scanResultsIndex
-                                    < link.scan_results_same_freq.size(); ++scanResultsIndex) {
-                                WifiLinkLayerStats.ScanResultWithSameFreq linkLayerScanResult =
-                                        link.scan_results_same_freq.get(scanResultsIndex);
-                                if (linkLayerScanResult != null) {
-                                    String wifiLinkBssid = (mloLinks.size() > 0)
-                                            ? mloLinks.get(link.link_id, new MloLink())
-                                            .getApMacAddress().toString() : info.getBSSID();
-                                    if (!linkLayerScanResult.bssid.equals(wifiLinkBssid)) {
-                                        ScanResultWithSameFreq scanResultWithSameFreq =
-                                                new ScanResultWithSameFreq();
-                                        scanResultWithSameFreq.scanResultTimestampMicros =
-                                                linkLayerScanResult.scan_result_timestamp_micros;
-                                        scanResultWithSameFreq.rssi = linkLayerScanResult.rssi;
-                                        scanResultWithSameFreq.frequencyMhz =
-                                                linkLayerScanResult.frequencyMhz;
-                                        scanResultsWithSameFreq.add(scanResultWithSameFreq);
-                                    }
-                                }
-                            }
-                        }
-                        linkStats.scanResultWithSameFreq =
-                            scanResultsWithSameFreq.toArray(new ScanResultWithSameFreq[0]);
-                        wifiUsabilityStatsEntry.linkStats[i] = linkStats;
-                    }
-                }
-                wifiUsabilityStatsEntry.mloMode = stats.wifiMloMode;
-                wifiUsabilityStatsEntry.labelBadEventCount = mAccumulatedLabelBadCount;
-                wifiUsabilityStatsEntry.wifiFrameworkState = mWifiFrameworkState;
-                wifiUsabilityStatsEntry.isNetworkCapabilitiesDownstreamSufficient =
-                        mSpeedSufficientNetworkCapabilities.Downstream;
-                wifiUsabilityStatsEntry.isNetworkCapabilitiesUpstreamSufficient =
-                        mSpeedSufficientNetworkCapabilities.Upstream;
-                wifiUsabilityStatsEntry.isThroughputPredictorDownstreamSufficient =
-                        mSpeedSufficientThroughputPredictor.Downstream;
-                wifiUsabilityStatsEntry.isThroughputPredictorUpstreamSufficient =
-                        mSpeedSufficientThroughputPredictor.Upstream;
-                wifiUsabilityStatsEntry.isBluetoothConnected =
-                        mWifiGlobals.isBluetoothConnected();
-                wifiUsabilityStatsEntry.uwbAdapterState = getLastUwbState();
-                wifiUsabilityStatsEntry.isLowLatencyActivated = getLowLatencyState();
-                wifiUsabilityStatsEntry.maxSupportedTxLinkspeed =
-                        info.getMaxSupportedTxLinkSpeedMbps();
-                wifiUsabilityStatsEntry.maxSupportedRxLinkspeed =
-                        info.getMaxSupportedRxLinkSpeedMbps();
-                wifiUsabilityStatsEntry.voipMode = getVoipMode();
-                wifiUsabilityStatsEntry.threadDeviceRole = getLastThreadDeviceRole();
+            SparseArray<MloLink> mloLinks = new SparseArray<>();
+            for (MloLink link: info.getAffiliatedMloLinks()) {
+                mloLinks.put(link.getLinkId(), link);
             }
+            if (stats.links != null && stats.links.length > 0) {
+                int numLinks = stats.links.length;
+                wifiUsabilityStatsEntry.wifiLinkCount = numLinks;
+                wifiUsabilityStatsEntry.linkStats = new LinkStats[numLinks];
+                for (int i = 0; i < numLinks; ++i) {
+                    LinkStats linkStats = new LinkStats();
+                    WifiLinkLayerStats.LinkSpecificStats link = stats.links[i];
+                    linkStats.linkId = link.link_id;
+                    linkStats.state = link.state;
+                    linkStats.radioId = link.radio_id;
+                    linkStats.frequencyMhz = link.frequencyMhz;
+                    linkStats.beaconRx = link.beacon_rx;
+                    linkStats.rssiMgmt = link.rssi_mgmt;
+                    linkStats.timeSliceDutyCycleInPercent = link.timeSliceDutyCycleInPercent;
+                    linkStats.rssi = (mloLinks.size() > 0) ? mloLinks.get(link.link_id,
+                            new MloLink()).getRssi() : info.getRssi();
+                    linkStats.txLinkspeed = (mloLinks.size() > 0) ? mloLinks.get(link.link_id,
+                            new MloLink()).getTxLinkSpeedMbps() : info.getTxLinkSpeedMbps();
+                    linkStats.rxLinkspeed = (mloLinks.size() > 0) ? mloLinks.get(link.link_id,
+                            new MloLink()).getRxLinkSpeedMbps() : info.getRxLinkSpeedMbps();
+                    WifiLinkLayerStats.ChannelStats channlStatsEntryOnFreq =
+                            stats.channelStatsMap.get(link.frequencyMhz);
+                    if (channlStatsEntryOnFreq != null) {
+                        linkStats.channelWidth = channlStatsEntryOnFreq.channelWidth;
+                        linkStats.centerFreqFirstSeg =
+                            channlStatsEntryOnFreq.frequencyFirstSegment;
+                        linkStats.centerFreqSecondSeg =
+                            channlStatsEntryOnFreq.frequencySecondSegment;
+                        linkStats.onTimeInMs = channlStatsEntryOnFreq.radioOnTimeMs;
+                        linkStats.ccaBusyTimeInMs = channlStatsEntryOnFreq.ccaBusyTimeMs;
+                    }
+                    linkStats.contentionTimeStats =
+                            new ContentionTimeStats[NUM_WME_ACCESS_CATEGORIES];
+                    linkStats.packetStats = new PacketStats[NUM_WME_ACCESS_CATEGORIES];
+                    for (int ac = 0; ac < NUM_WME_ACCESS_CATEGORIES; ac++) {
+                        ContentionTimeStats contentionTimeStats = new ContentionTimeStats();
+                        PacketStats packetStats = new PacketStats();
+                        switch (ac) {
+                            case ContentionTimeStats.WME_ACCESS_CATEGORY_BE:
+                                contentionTimeStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_BE;
+                                contentionTimeStats.contentionTimeMinMicros =
+                                        stats.contentionTimeMinBeInUsec;
+                                contentionTimeStats.contentionTimeMaxMicros =
+                                        stats.contentionTimeMaxBeInUsec;
+                                contentionTimeStats.contentionTimeAvgMicros =
+                                        stats.contentionTimeAvgBeInUsec;
+                                contentionTimeStats.contentionNumSamples =
+                                        stats.contentionNumSamplesBe;
+                                packetStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_BE;
+                                packetStats.txSuccess = link.txmpdu_be;
+                                packetStats.txRetries = link.retries_be;
+                                packetStats.txBad = link.lostmpdu_be;
+                                packetStats.rxSuccess = link.rxmpdu_be;
+                                break;
+                            case ContentionTimeStats.WME_ACCESS_CATEGORY_BK:
+                                contentionTimeStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_BK;
+                                contentionTimeStats.contentionTimeMinMicros =
+                                        stats.contentionTimeMinBkInUsec;
+                                contentionTimeStats.contentionTimeMaxMicros =
+                                        stats.contentionTimeMaxBkInUsec;
+                                contentionTimeStats.contentionTimeAvgMicros =
+                                        stats.contentionTimeAvgBkInUsec;
+                                contentionTimeStats.contentionNumSamples =
+                                        stats.contentionNumSamplesBk;
+                                packetStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_BK;
+                                packetStats.txSuccess = link.txmpdu_bk;
+                                packetStats.txRetries = link.retries_bk;
+                                packetStats.txBad = link.lostmpdu_bk;
+                                packetStats.rxSuccess = link.rxmpdu_bk;
+                                break;
+                            case ContentionTimeStats.WME_ACCESS_CATEGORY_VI:
+                                contentionTimeStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_VI;
+                                contentionTimeStats.contentionTimeMinMicros =
+                                        stats.contentionTimeMinViInUsec;
+                                contentionTimeStats.contentionTimeMaxMicros =
+                                        stats.contentionTimeMaxViInUsec;
+                                contentionTimeStats.contentionTimeAvgMicros =
+                                        stats.contentionTimeAvgViInUsec;
+                                contentionTimeStats.contentionNumSamples =
+                                        stats.contentionNumSamplesVi;
+                                packetStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_VI;
+                                packetStats.txSuccess = link.txmpdu_vi;
+                                packetStats.txRetries = link.retries_vi;
+                                packetStats.txBad = link.lostmpdu_vi;
+                                packetStats.rxSuccess = link.rxmpdu_vi;
+                                break;
+                            case ContentionTimeStats.WME_ACCESS_CATEGORY_VO:
+                                contentionTimeStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_VO;
+                                contentionTimeStats.contentionTimeMinMicros =
+                                        stats.contentionTimeMinVoInUsec;
+                                contentionTimeStats.contentionTimeMaxMicros =
+                                        stats.contentionTimeMaxVoInUsec;
+                                contentionTimeStats.contentionTimeAvgMicros =
+                                        stats.contentionTimeAvgVoInUsec;
+                                contentionTimeStats.contentionNumSamples =
+                                        stats.contentionNumSamplesVo;
+                                packetStats.accessCategory =
+                                        ContentionTimeStats.WME_ACCESS_CATEGORY_VO;
+                                packetStats.txSuccess = link.txmpdu_vo;
+                                packetStats.txRetries = link.retries_vo;
+                                packetStats.txBad = link.lostmpdu_vo;
+                                packetStats.rxSuccess = link.rxmpdu_vo;
+                                break;
+                            default:
+                                Log.e(TAG, "Unknown WME Access Category: " + ac);
+                        }
+                        linkStats.contentionTimeStats[ac] = contentionTimeStats;
+                        linkStats.packetStats[ac] = packetStats;
+                    }
+                    if (link.peerInfo != null && link.peerInfo.length > 0) {
+                        int numPeers = link.peerInfo.length;
+                        linkStats.peerInfo = new PeerInfo[numPeers];
+                        for (int peerIndex = 0; peerIndex < numPeers; ++peerIndex) {
+                            PeerInfo peerInfo = new PeerInfo();
+                            WifiLinkLayerStats.PeerInfo curPeer = link.peerInfo[peerIndex];
+                            peerInfo.staCount = curPeer.staCount;
+                            peerInfo.chanUtil = curPeer.chanUtil;
+                            if (curPeer.rateStats != null && curPeer.rateStats.length > 0) {
+                                int numRates = curPeer.rateStats.length;
+                                peerInfo.rateStats = new RateStats[numRates];
+                                for (int rateIndex = 0; rateIndex < numRates; rateIndex++) {
+                                    RateStats rateStats = new RateStats();
+                                    WifiLinkLayerStats.RateStat curRate =
+                                            curPeer.rateStats[rateIndex];
+                                    rateStats.preamble = curRate.preamble;
+                                    rateStats.nss = curRate.nss;
+                                    rateStats.bw = curRate.bw;
+                                    rateStats.rateMcsIdx = curRate.rateMcsIdx;
+                                    rateStats.bitRateInKbps = curRate.bitRateInKbps;
+                                    rateStats.txMpdu = curRate.txMpdu;
+                                    rateStats.rxMpdu = curRate.rxMpdu;
+                                    rateStats.mpduLost = curRate.mpduLost;
+                                    rateStats.retries = curRate.retries;
+                                    peerInfo.rateStats[rateIndex] = rateStats;
+                                }
+                            }
+                            linkStats.peerInfo[peerIndex] = peerInfo;
+                        }
+                    }
+                    List<ScanResultWithSameFreq> scanResultsWithSameFreq = new ArrayList<>();
+                    if (link.scan_results_same_freq != null
+                            && link.scan_results_same_freq.size() > 0) {
+                        for (int scanResultsIndex = 0; scanResultsIndex
+                                < link.scan_results_same_freq.size(); ++scanResultsIndex) {
+                            WifiLinkLayerStats.ScanResultWithSameFreq linkLayerScanResult =
+                                    link.scan_results_same_freq.get(scanResultsIndex);
+                            if (linkLayerScanResult != null) {
+                                String wifiLinkBssid = "";
+                                if (mloLinks.size() > 0) {
+                                    MacAddress apMacAddress =
+                                            mloLinks.get(link.link_id, new MloLink())
+                                            .getApMacAddress();
+                                    if (apMacAddress != null) {
+                                        wifiLinkBssid = apMacAddress.toString();
+                                    }
+                                } else {
+                                    wifiLinkBssid = info.getBSSID();
+                                }
+                                if (!linkLayerScanResult.bssid.equals(wifiLinkBssid)) {
+                                    ScanResultWithSameFreq scanResultWithSameFreq =
+                                            new ScanResultWithSameFreq();
+                                    scanResultWithSameFreq.scanResultTimestampMicros =
+                                            linkLayerScanResult.scan_result_timestamp_micros;
+                                    scanResultWithSameFreq.rssi = linkLayerScanResult.rssi;
+                                    scanResultWithSameFreq.frequencyMhz =
+                                            linkLayerScanResult.frequencyMhz;
+                                    scanResultsWithSameFreq.add(scanResultWithSameFreq);
+                                }
+                            }
+                        }
+                    }
+                    linkStats.scanResultWithSameFreq =
+                        scanResultsWithSameFreq.toArray(new ScanResultWithSameFreq[0]);
+                    wifiUsabilityStatsEntry.linkStats[i] = linkStats;
+                }
+            }
+            wifiUsabilityStatsEntry.mloMode = stats.wifiMloMode;
+            wifiUsabilityStatsEntry.labelBadEventCount = mAccumulatedLabelBadCount;
+            wifiUsabilityStatsEntry.wifiFrameworkState = mWifiFrameworkState;
+            wifiUsabilityStatsEntry.isNetworkCapabilitiesDownstreamSufficient =
+                    mSpeedSufficientNetworkCapabilities.Downstream;
+            wifiUsabilityStatsEntry.isNetworkCapabilitiesUpstreamSufficient =
+                    mSpeedSufficientNetworkCapabilities.Upstream;
+            wifiUsabilityStatsEntry.isThroughputPredictorDownstreamSufficient =
+                    mSpeedSufficientThroughputPredictor.Downstream;
+            wifiUsabilityStatsEntry.isThroughputPredictorUpstreamSufficient =
+                    mSpeedSufficientThroughputPredictor.Upstream;
+            wifiUsabilityStatsEntry.isBluetoothConnected =
+                    mWifiGlobals.isBluetoothConnected();
+            wifiUsabilityStatsEntry.uwbAdapterState = getLastUwbState();
+            wifiUsabilityStatsEntry.isLowLatencyActivated = getLowLatencyState();
+            wifiUsabilityStatsEntry.maxSupportedTxLinkspeed =
+                    info.getMaxSupportedTxLinkSpeedMbps();
+            wifiUsabilityStatsEntry.maxSupportedRxLinkspeed =
+                    info.getMaxSupportedRxLinkSpeedMbps();
+            wifiUsabilityStatsEntry.voipMode = getVoipMode();
+            wifiUsabilityStatsEntry.threadDeviceRole = getLastThreadDeviceRole();
 
             wifiUsabilityStatsEntry.timeStampMs = stats.timeStampInMs;
             wifiUsabilityStatsEntry.totalTxSuccess = stats.txmpdu_be + stats.txmpdu_bk
@@ -7428,17 +7530,15 @@ public class WifiMetrics {
                     radioStats.totalRoamScanTimeMs = radio.on_time_roam_scan;
                     radioStats.totalPnoScanTimeMs = radio.on_time_pno_scan;
                     radioStats.totalHotspot2ScanTimeMs = radio.on_time_hs20_scan;
-                    if (isWiFiScorerNewStatsCollected()) {
-                        if (radio.tx_time_in_ms_per_level != null
-                                && radio.tx_time_in_ms_per_level.length > 0) {
-                            int txTimePerLevelLength = radio.tx_time_in_ms_per_level.length;
-                            radioStats.txTimeMsPerLevel = new int[txTimePerLevelLength];
-                            for (int txTimePerLevelIndex = 0;
-                                    txTimePerLevelIndex < txTimePerLevelLength;
-                                    ++txTimePerLevelIndex) {
-                                radioStats.txTimeMsPerLevel[txTimePerLevelIndex] =
-                                    radio.tx_time_in_ms_per_level[txTimePerLevelIndex];
-                            }
+                    if (radio.tx_time_in_ms_per_level != null
+                            && radio.tx_time_in_ms_per_level.length > 0) {
+                        int txTimePerLevelLength = radio.tx_time_in_ms_per_level.length;
+                        radioStats.txTimeMsPerLevel = new int[txTimePerLevelLength];
+                        for (int txTimePerLevelIndex = 0;
+                                txTimePerLevelIndex < txTimePerLevelLength;
+                                ++txTimePerLevelIndex) {
+                            radioStats.txTimeMsPerLevel[txTimePerLevelIndex] =
+                                radio.tx_time_in_ms_per_level[txTimePerLevelIndex];
                         }
                     }
                     wifiUsabilityStatsEntry.radioStats[i] = radioStats;
@@ -7567,13 +7667,11 @@ public class WifiMetrics {
                         mWifiDataStall.isThroughputSufficient();
                 wifiUsabilityStatsEntry.isCellularDataAvailable =
                         mWifiDataStall.isCellularDataAvailable();
-                if (isWiFiScorerNewStatsCollected()) {
-                    wifiUsabilityStatsEntry.txTransmittedBytes =
-                        mWifiDataStall.getTxTransmittedBytes();
-                    wifiUsabilityStatsEntry.rxTransmittedBytes =
-                        mWifiDataStall.getRxTransmittedBytes();
-                    wifiUsabilityStatsEntry.statusDataStall = statusDataStall;
-                }
+                wifiUsabilityStatsEntry.txTransmittedBytes =
+                    mWifiDataStall.getTxTransmittedBytes();
+                wifiUsabilityStatsEntry.rxTransmittedBytes =
+                    mWifiDataStall.getRxTransmittedBytes();
+                wifiUsabilityStatsEntry.statusDataStall = statusDataStall;
             }
             if (mWifiSettingsStore != null) {
                 wifiUsabilityStatsEntry.isWifiScoringEnabled =
@@ -7607,8 +7705,6 @@ public class WifiMetrics {
                     ? WifiUsabilityStatsEntry.CAPTURE_EVENT_TYPE_ONESHOT_RSSI_POLL
                     : WifiUsabilityStatsEntry.CAPTURE_EVENT_TYPE_SYNCHRONOUS;
 
-            mWifiUsabilityStatsEntriesRingBuffer.add(wifiUsabilityStatsEntry);
-            mWifiUsabilityStatsEntryCounter++;
             if (mScoreBreachLowTimeMillis != -1) {
                 long elapsedTime =  mClock.getElapsedSinceBootMillis() - mScoreBreachLowTimeMillis;
                 if (elapsedTime >= MIN_SCORE_BREACH_TO_GOOD_STATS_WAIT_TIME_MS) {
@@ -7624,6 +7720,17 @@ public class WifiMetrics {
                         createNewWifiUsabilityStatsEntryParcelable(wifiUsabilityStatsEntry, stats,
                                 info));
             }
+
+            // We need the records in the ring buffer to all have the same timebase. The records
+            // created here are timestamped by the WiFi driver and the timestamps have been found to
+            // drift relative to the Android clock. Historically, these records have been forwarded
+            // to external WiFi scorers with the drifting clock. In order to maintain historical
+            // behavior while ensuring that records in the ring buffer have the same timebase, we
+            // will send the record created in this function unmodified to any external WiFi Scorer,
+            // but we will modify the timestamp before storing in the ring buffer. Thus, the
+            // following statement, which also modifies the timestamp, must be executed AFTER the
+            // record is deep copied and sent to the external WiFi Scorer.
+            addToRingBuffer(wifiUsabilityStatsEntry);
 
             mSeqNumInsideFramework++;
             mProbeStatusSinceLastUpdate =
@@ -8112,9 +8219,15 @@ public class WifiMetrics {
         }
     }
 
-    private WifiUsabilityStatsEntry createNewWifiUsabilityStatsEntry(WifiUsabilityStatsEntry s) {
+    private WifiUsabilityStatsEntry createNewWifiUsabilityStatsEntry(WifiUsabilityStatsEntry s,
+            long referenceTimestampMs) {
         WifiUsabilityStatsEntry out = new WifiUsabilityStatsEntry();
-        out.timeStampMs = s.timeStampMs;
+        // Order the fields here according to the ID in
+        // packages/modules/Wifi/service/proto/src/metrics.proto
+        // Privacy review suggests not to upload real timestamp
+        out.timeStampMs = 0;
+        out.rssi = s.rssi;
+        out.linkSpeedMbps = s.linkSpeedMbps;
         out.totalTxSuccess = s.totalTxSuccess;
         out.totalTxRetries = s.totalTxRetries;
         out.totalTxBad = s.totalTxBad;
@@ -8128,21 +8241,23 @@ public class WifiMetrics {
         out.totalRoamScanTimeMs = s.totalRoamScanTimeMs;
         out.totalPnoScanTimeMs = s.totalPnoScanTimeMs;
         out.totalHotspot2ScanTimeMs = s.totalHotspot2ScanTimeMs;
-        out.rssi = s.rssi;
-        out.linkSpeedMbps = s.linkSpeedMbps;
-        out.totalCcaBusyFreqTimeMs = s.totalCcaBusyFreqTimeMs;
-        out.totalRadioOnFreqTimeMs = s.totalRadioOnFreqTimeMs;
-        out.totalBeaconRx = s.totalBeaconRx;
         out.wifiScore = s.wifiScore;
         out.wifiUsabilityScore = s.wifiUsabilityScore;
         out.seqNumToFramework = s.seqNumToFramework;
+        out.totalCcaBusyFreqTimeMs = s.totalCcaBusyFreqTimeMs;
+        out.totalRadioOnFreqTimeMs = s.totalRadioOnFreqTimeMs;
+        out.totalBeaconRx = s.totalBeaconRx;
         out.predictionHorizonSec = s.predictionHorizonSec;
         out.probeStatusSinceLastUpdate = s.probeStatusSinceLastUpdate;
         out.probeElapsedTimeSinceLastUpdateMs = s.probeElapsedTimeSinceLastUpdateMs;
         out.probeMcsRateSinceLastUpdate = s.probeMcsRateSinceLastUpdate;
         out.rxLinkSpeedMbps = s.rxLinkSpeedMbps;
-        out.isSameBssidAndFreq = s.isSameBssidAndFreq;
         out.seqNumInsideFramework = s.seqNumInsideFramework;
+        out.isSameBssidAndFreq = s.isSameBssidAndFreq;
+        // WifiUsabilityStatsEntry.cellularDataNetworkType (ID: 30) is not implemented
+        // WifiUsabilityStatsEntry.cellularSignalStrengthDbm (ID: 31) is not implemented
+        // WifiUsabilityStatsEntry.cellularSignalStrengthDb (ID: 32) is not implemented
+        // WifiUsabilityStatsEntry.isSameRegisteredCell (ID: 33) is not implemented
         out.deviceMobilityState = s.deviceMobilityState;
         out.timeSliceDutyCycleInPercent = s.timeSliceDutyCycleInPercent;
         out.contentionTimeStats = s.contentionTimeStats;
@@ -8172,8 +8287,17 @@ public class WifiMetrics {
         out.maxSupportedRxLinkspeed = s.maxSupportedRxLinkspeed;
         out.voipMode = s.voipMode;
         out.threadDeviceRole = s.threadDeviceRole;
+        out.captureEventType = s.captureEventType;
+        out.captureEventTypeSubcode = s.captureEventTypeSubcode;
         out.statusDataStall = s.statusDataStall;
+        out.timestampOffsetMs = s.timeStampMs - referenceTimestampMs;
         return out;
+    }
+
+    private void addToRingBuffer(WifiUsabilityStatsEntry wifiUsabilityStatsEntry) {
+        // We override the timestamp here so that all records have the same time base.
+        wifiUsabilityStatsEntry.timeStampMs = mClock.getElapsedSinceBootMillis();
+        mWifiUsabilityStatsEntriesRingBuffer.add(wifiUsabilityStatsEntry);
     }
 
     /**
@@ -8183,15 +8307,16 @@ public class WifiMetrics {
         if (!isPrimary(ifaceName)) {
             return;
         }
-        WifiUsabilityStatsEntry wifiUsabilityStatsEntry =
-                mWifiUsabilityStatsEntriesRingBuffer.size()
-                < MAX_WIFI_USABILITY_STATS_ENTRIES_RING_BUFFER_SIZE
-                ? new WifiUsabilityStatsEntry() : mWifiUsabilityStatsEntriesRingBuffer.remove()
-                .clear();
-        wifiUsabilityStatsEntry.timeStampMs = mClock.getElapsedSinceBootMillis();
-        wifiUsabilityStatsEntry.captureEventType = e;
-        wifiUsabilityStatsEntry.captureEventTypeSubcode = c;
-        mWifiUsabilityStatsEntriesRingBuffer.add(wifiUsabilityStatsEntry);
+        synchronized (mLock) {
+            WifiUsabilityStatsEntry wifiUsabilityStatsEntry =
+                    mWifiUsabilityStatsEntriesRingBuffer.size()
+                    < MAX_WIFI_USABILITY_STATS_ENTRIES_RING_BUFFER_SIZE
+                    ? new WifiUsabilityStatsEntry() : mWifiUsabilityStatsEntriesRingBuffer.remove()
+                    .clear();
+            wifiUsabilityStatsEntry.captureEventType = e;
+            wifiUsabilityStatsEntry.captureEventTypeSubcode = c;
+            addToRingBuffer(wifiUsabilityStatsEntry);
+        }
     }
     /**
      * Used to log an asynchronous event (such as WiFi disconnect) into the ring buffer.
@@ -8200,82 +8325,6 @@ public class WifiMetrics {
      */
     public void logAsynchronousEvent(String ifaceName, int e) {
         logAsynchronousEvent(ifaceName, e, -1);
-    }
-
-    private WifiUsabilityStats createWifiUsabilityStatsWithLabel(int label, int triggerType,
-            int firmwareAlertCode) {
-        WifiUsabilityStats wifiUsabilityStats = new WifiUsabilityStats();
-        wifiUsabilityStats.label = label;
-        wifiUsabilityStats.triggerType = triggerType;
-        wifiUsabilityStats.firmwareAlertCode = firmwareAlertCode;
-        wifiUsabilityStats.timeStampMs = mClock.getElapsedSinceBootMillis();
-        wifiUsabilityStats.stats =
-                new WifiUsabilityStatsEntry[mWifiUsabilityStatsEntriesRingBuffer.size()];
-        for (int i = 0; i < mWifiUsabilityStatsEntriesRingBuffer.size(); i++) {
-            wifiUsabilityStats.stats[i] =
-                    createNewWifiUsabilityStatsEntry(mWifiUsabilityStatsEntriesRingBuffer.get(i));
-        }
-        return wifiUsabilityStats;
-    }
-
-    /**
-     * Label the current snapshot of WifiUsabilityStatsEntriesRingBuffer and save the labeled data
-     * inside a WifiUsabilityStats ptoto.
-     *
-     * @param label WifiUsabilityStats.LABEL_GOOD or WifiUsabilityStats.LABEL_BAD
-     * @param triggerType what event triggers WifiUsabilityStats
-     * @param firmwareAlertCode the firmware alert code when the stats was triggered by a
-     *        firmware alert
-     */
-    public void addToWifiUsabilityStatsList(String ifaceName, int label, int triggerType,
-            int firmwareAlertCode) {
-        synchronized (mLock) {
-            if (!isPrimary(ifaceName)) {
-                return;
-            }
-            if (mWifiUsabilityStatsEntriesRingBuffer.isEmpty() || !mScreenOn) {
-                return;
-            }
-            if (label == WifiUsabilityStats.LABEL_GOOD) {
-                // Only add a good event if at least |MIN_WIFI_GOOD_USABILITY_STATS_PERIOD_MS|
-                // has passed.
-                if (mWifiUsabilityStatsListGood.isEmpty()
-                        || mWifiUsabilityStatsListGood.getLast().stats[mWifiUsabilityStatsListGood
-                        .getLast().stats.length - 1].timeStampMs
-                        + MIN_WIFI_GOOD_USABILITY_STATS_PERIOD_MS
-                        < mWifiUsabilityStatsEntriesRingBuffer.getLast().timeStampMs) {
-                    while (mWifiUsabilityStatsListGood.size()
-                            >= MAX_WIFI_USABILITY_STATS_RECORDS_PER_TYPE) {
-                        mWifiUsabilityStatsListGood.remove(
-                                mRand.nextInt(mWifiUsabilityStatsListGood.size()));
-                    }
-                    mWifiUsabilityStatsListGood.add(
-                            createWifiUsabilityStatsWithLabel(label, triggerType,
-                                    firmwareAlertCode));
-                }
-            } else {
-                // Only add a bad event if at least |MIN_DATA_STALL_WAIT_MS|
-                // has passed.
-                mScoreBreachLowTimeMillis = -1;
-                if (mWifiUsabilityStatsListBad.isEmpty()
-                        || (mWifiUsabilityStatsListBad.getLast().stats[mWifiUsabilityStatsListBad
-                        .getLast().stats.length - 1].timeStampMs
-                        + MIN_DATA_STALL_WAIT_MS
-                        < mWifiUsabilityStatsEntriesRingBuffer.getLast().timeStampMs)) {
-                    while (mWifiUsabilityStatsListBad.size()
-                            >= MAX_WIFI_USABILITY_STATS_RECORDS_PER_TYPE) {
-                        mWifiUsabilityStatsListBad.remove(
-                                mRand.nextInt(mWifiUsabilityStatsListBad.size()));
-                    }
-                    mWifiUsabilityStatsListBad.add(
-                            createWifiUsabilityStatsWithLabel(label, triggerType,
-                                    firmwareAlertCode));
-                }
-                mAccumulatedLabelBadCount++;
-            }
-            mWifiUsabilityStatsEntryCounter = 0;
-            mWifiUsabilityStatsEntriesRingBuffer.clear();
-        }
     }
 
     private DeviceMobilityStatePnoScanStats getOrCreateDeviceMobilityStatePnoScanStats(
@@ -8865,8 +8914,11 @@ public class WifiMetrics {
         }
     }
 
-    /** Add a WifiLock acquisition session */
-    public void addWifiLockAcqSession(int lockType, int[] attrUids, String[] attrTags,
+    /**
+     * Add a WifiLockManager acquisition session. This represents the session during which
+     * a single lock was held.
+     */
+    public void addWifiLockManagerAcqSession(int lockType, int[] attrUids, String[] attrTags,
             int callerType, long duration, boolean isPowersaveDisableAllowed,
             boolean isAppExemptedFromScreenOn, boolean isAppExemptedFromForeground) {
         int lockMode;
@@ -8884,6 +8936,27 @@ public class WifiMetrics {
                 Log.e(TAG, "addWifiLockAcqSession: Invalid lock type: " + lockType);
                 return;
         }
+        writeWifiLockAcqSession(lockMode, attrUids, attrTags, callerType, duration,
+                isPowersaveDisableAllowed, isAppExemptedFromScreenOn, isAppExemptedFromForeground);
+    }
+
+    /**
+     * Add a MulticastLockManager acquisition session. This represents the session during which
+     * a single lock was held.
+     */
+    public void addMulticastLockManagerAcqSession(
+            int uid, String attributionTag, int callerType, long duration) {
+        // Use a default value for the boolean parameters, since these fields
+        // don't apply to multicast locks.
+        writeWifiLockAcqSession(
+                WifiStatsLog.WIFI_LOCK_RELEASED__MODE__WIFI_MODE_MULTICAST_FILTERING_DISABLED,
+                new int[]{uid}, new String[]{attributionTag}, callerType, duration,
+                false, false, false);
+    }
+
+    private void writeWifiLockAcqSession(int lockMode, int[] attrUids, String[] attrTags,
+            int callerType, long duration, boolean isPowersaveDisableAllowed,
+            boolean isAppExemptedFromScreenOn, boolean isAppExemptedFromForeground) {
         WifiStatsLog.write(WifiStatsLog.WIFI_LOCK_RELEASED,
                 attrUids,
                 attrTags,
@@ -8895,8 +8968,11 @@ public class WifiMetrics {
                 isAppExemptedFromForeground);
     }
 
-    /** Add a WifiLock active session */
-    public void addWifiLockActiveSession(int lockType, int[] attrUids, String[] attrTags,
+    /**
+     * Add a WifiLockManager active session. This represents the session during which
+     * low-latency mode was enabled.
+     */
+    public void addWifiLockManagerActiveSession(int lockType, int[] attrUids, String[] attrTags,
             long duration, boolean isPowersaveDisableAllowed,
             boolean isAppExemptedFromScreenOn, boolean isAppExemptedFromForeground) {
         int lockMode;
@@ -8919,6 +8995,25 @@ public class WifiMetrics {
                 Log.e(TAG, "addWifiLockActiveSession: Invalid lock type: " + lockType);
                 return;
         }
+        writeWifiLockActiveSession(lockMode, attrUids, attrTags, duration,
+                isPowersaveDisableAllowed, isAppExemptedFromScreenOn, isAppExemptedFromForeground);
+    }
+
+    /**
+     * Add a MulticastLockManager active session. This represents the session during which
+     * multicast packet filtering was disabled.
+     */
+    public void addMulticastLockManagerActiveSession(long duration) {
+        // Use a default value for the array and boolean parameters,
+        // since these fields don't apply to multicast locks
+        writeWifiLockActiveSession(
+                WifiStatsLog.WIFI_LOCK_DEACTIVATED__MODE__WIFI_MODE_MULTICAST_FILTERING_DISABLED,
+                new int[0], new String[0], duration, false, false, false);
+    }
+
+    private void writeWifiLockActiveSession(int lockMode, int[] attrUids, String[] attrTags,
+            long duration, boolean isPowersaveDisableAllowed,
+            boolean isAppExemptedFromScreenOn, boolean isAppExemptedFromForeground) {
         WifiStatsLog.write(WifiStatsLog.WIFI_LOCK_DEACTIVATED,
                 attrUids,
                 attrTags,
@@ -9174,7 +9269,8 @@ public class WifiMetrics {
      */
     public void incrementConnectionDuration(String ifaceName, int timeDeltaLastTwoPollsMs,
             boolean isThroughputSufficient, boolean isCellularDataAvailable, int rssi, int txKbps,
-            int rxKbps) {
+            int rxKbps, int txLinkSpeedMbps, int rxLinkSpeedMbps,
+            @WifiAnnotations.ChannelWidth int channelBandwidth) {
         synchronized (mLock) {
             if (!isPrimary(ifaceName)) {
                 return;
@@ -9187,7 +9283,8 @@ public class WifiMetrics {
             WifiStatsLog.write(WifiStatsLog.WIFI_HEALTH_STAT_REPORTED, timeDeltaLastTwoPollsMs,
                     isThroughputSufficient || !mWifiWins, isCellularDataAvailable, band, rssi,
                     txKbps, rxKbps, mScorerUid, (wifiUsabilityState == WifiUsabilityState.USABLE),
-                    convertWifiUsabilityState(wifiUsabilityState));
+                    convertWifiUsabilityState(wifiUsabilityState),
+                    txLinkSpeedMbps, rxLinkSpeedMbps, convertChannelWidthToProto(channelBandwidth));
         }
     }
 
@@ -10474,6 +10571,155 @@ public class WifiMetrics {
                 getSoftApStoppedUpstreamType(upstreamCaps));
         WifiStatsLog.write(WifiStatsLog.SOFT_AP_STATE_CHANGED,
                 WifiStatsLog.SOFT_AP_STATE_CHANGED__HOTSPOT_ON__STATE_OFF);
+    }
+
+    /**
+     * Report that a client has disconnected from a soft ap session.
+     *
+     * @param disconnectReason reason for disconnection.
+     * @param source calling WorkSource that identifies the creator of the SoftAp.
+     */
+    public void reportOnClientsDisconnected(
+            @WifiAnnotations.SoftApDisconnectReason int disconnectReason,
+            WorkSource source) {
+        WifiStatsLog.write(WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED,
+                convertDisconnectReasonToProto(disconnectReason),
+                source.getUid(0)
+        );
+    }
+
+    private static int convertDisconnectReasonToProto(
+            @WifiAnnotations.SoftApDisconnectReason int disconnectReason) {
+        return switch (disconnectReason) {
+            case DeauthenticationReasonCode.REASON_UNKNOWN ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__UNKNOWN;
+            case DeauthenticationReasonCode.REASON_UNSPECIFIED ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__UNSPECIFIED;
+            case DeauthenticationReasonCode.REASON_PREV_AUTH_NOT_VALID ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__PREV_AUTH_NOT_VALID;
+            case DeauthenticationReasonCode.REASON_DEAUTH_LEAVING ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__DEAUTH_LEAVING;
+            case DeauthenticationReasonCode.REASON_DISASSOC_DUE_TO_INACTIVITY ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__DISASSOC_DUE_TO_INACTIVITY;
+            case DeauthenticationReasonCode.REASON_DISASSOC_AP_BUSY ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__DISASSOC_AP_BUSY;
+            case DeauthenticationReasonCode.REASON_CLASS2_FRAME_FROM_NONAUTH_STA ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__CLASS2_FRAME_FROM_NONAUTH_STA;
+            case DeauthenticationReasonCode.REASON_CLASS3_FRAME_FROM_NONASSOC_STA ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__CLASS3_FRAME_FROM_NONASSOC_STA;
+            case DeauthenticationReasonCode.REASON_DISASSOC_STA_HAS_LEFT ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__DISASSOC_STA_HAS_LEFT;
+            case DeauthenticationReasonCode.REASON_STA_REQ_ASSOC_WITHOUT_AUTH ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__STA_REQ_ASSOC_WITHOUT_AUTH;
+            case DeauthenticationReasonCode.REASON_PWR_CAPABILITY_NOT_VALID ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__PWR_CAPABILITY_NOT_VALID;
+            case DeauthenticationReasonCode.REASON_SUPPORTED_CHANNEL_NOT_VALID ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__SUPPORTED_CHANNEL_NOT_VALID;
+            case DeauthenticationReasonCode.REASON_BSS_TRANSITION_DISASSOC ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__BSS_TRANSITION_DISASSOC;
+            case DeauthenticationReasonCode.REASON_INVALID_IE ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__INVALID_IE;
+            case DeauthenticationReasonCode.REASON_MICHAEL_MIC_FAILURE ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MICHAEL_MIC_FAILURE;
+            case DeauthenticationReasonCode.REASON_FOURWAY_HANDSHAKE_TIMEOUT ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__FOURWAY_HANDSHAKE_TIMEOUT;
+            case DeauthenticationReasonCode.REASON_GROUP_KEY_UPDATE_TIMEOUT ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__GROUP_KEY_UPDATE_TIMEOUT;
+            case DeauthenticationReasonCode.REASON_IE_IN_4WAY_DIFFERS ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__IE_IN_4WAY_DIFFERS;
+            case DeauthenticationReasonCode.REASON_GROUP_CIPHER_NOT_VALID ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__GROUP_CIPHER_NOT_VALID;
+            case DeauthenticationReasonCode.REASON_PAIRWISE_CIPHER_NOT_VALID ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__PAIRWISE_CIPHER_NOT_VALID;
+            case DeauthenticationReasonCode.REASON_AKMP_NOT_VALID ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__AKMP_NOT_VALID;
+            case DeauthenticationReasonCode.REASON_UNSUPPORTED_RSN_IE_VERSION ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__UNSUPPORTED_RSN_IE_VERSION;
+            case DeauthenticationReasonCode.REASON_INVALID_RSN_IE_CAPAB ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__INVALID_RSN_IE_CAPAB;
+            case DeauthenticationReasonCode.REASON_IEEE_802_1X_AUTH_FAILED ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__IEEE_802_1X_AUTH_FAILED;
+            case DeauthenticationReasonCode.REASON_CIPHER_SUITE_REJECTED ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__CIPHER_SUITE_REJECTED;
+            case DeauthenticationReasonCode.REASON_TDLS_TEARDOWN_UNREACHABLE ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__TDLS_TEARDOWN_UNREACHABLE;
+            case DeauthenticationReasonCode.REASON_TDLS_TEARDOWN_UNSPECIFIED ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__TDLS_TEARDOWN_UNSPECIFIED;
+            case DeauthenticationReasonCode.REASON_SSP_REQUESTED_DISASSOC ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__SSP_REQUESTED_DISASSOC;
+            case DeauthenticationReasonCode.REASON_NO_SSP_ROAMING_AGREEMENT ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__NO_SSP_ROAMING_AGREEMENT;
+            case DeauthenticationReasonCode.REASON_BAD_CIPHER_OR_AKM ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__BAD_CIPHER_OR_AKM;
+            case DeauthenticationReasonCode.REASON_NOT_AUTHORIZED_THIS_LOCATION ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__NOT_AUTHORIZED_THIS_LOCATION;
+            case DeauthenticationReasonCode.REASON_SERVICE_CHANGE_PRECLUDES_TS ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__SERVICE_CHANGE_PRECLUDES_TS;
+            case DeauthenticationReasonCode.REASON_UNSPECIFIED_QOS_REASON ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__UNSPECIFIED_QOS_REASON;
+            case DeauthenticationReasonCode.REASON_NOT_ENOUGH_BANDWIDTH ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__NOT_ENOUGH_BANDWIDTH;
+            case DeauthenticationReasonCode.REASON_DISASSOC_LOW_ACK ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__DISASSOC_LOW_ACK;
+            case DeauthenticationReasonCode.REASON_EXCEEDED_TXOP ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__EXCEEDED_TXOP;
+            case DeauthenticationReasonCode.REASON_STA_LEAVING ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__STA_LEAVING;
+            case DeauthenticationReasonCode.REASON_END_TS_BA_DLS ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__END_TS_BA_DLS;
+            case DeauthenticationReasonCode.REASON_UNKNOWN_TS_BA ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__UNKNOWN_TS_BA;
+            case DeauthenticationReasonCode.REASON_TIMEOUT ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__TIMEOUT;
+            case DeauthenticationReasonCode.REASON_PEERKEY_MISMATCH ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__PEERKEY_MISMATCH;
+            case DeauthenticationReasonCode.REASON_AUTHORIZED_ACCESS_LIMIT_REACHED ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__AUTHORIZED_ACCESS_LIMIT_REACHED;
+            case DeauthenticationReasonCode.REASON_EXTERNAL_SERVICE_REQUIREMENTS ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__EXTERNAL_SERVICE_REQUIREMENTS;
+            case DeauthenticationReasonCode.REASON_INVALID_FT_ACTION_FRAME_COUNT ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__INVALID_FT_ACTION_FRAME_COUNT;
+            case DeauthenticationReasonCode.REASON_INVALID_PMKID ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__INVALID_PMKID;
+            case DeauthenticationReasonCode.REASON_INVALID_MDE ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__INVALID_MDE;
+            case DeauthenticationReasonCode.REASON_INVALID_FTE ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__INVALID_FTE;
+            case DeauthenticationReasonCode.REASON_MESH_PEERING_CANCELLED ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_PEERING_CANCELLED;
+            case DeauthenticationReasonCode.REASON_MESH_MAX_PEERS ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_MAX_PEERS;
+            case DeauthenticationReasonCode.REASON_MESH_CONFIG_POLICY_VIOLATION ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_CONFIG_POLICY_VIOLATION;
+            case DeauthenticationReasonCode.REASON_MESH_CLOSE_RCVD ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_CLOSE_RCVD;
+            case DeauthenticationReasonCode.REASON_MESH_MAX_RETRIES ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_MAX_RETRIES;
+            case DeauthenticationReasonCode.REASON_MESH_CONFIRM_TIMEOUT ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_CONFIRM_TIMEOUT;
+            case DeauthenticationReasonCode.REASON_MESH_INVALID_GTK ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_INVALID_GTK;
+            case DeauthenticationReasonCode.REASON_MESH_INCONSISTENT_PARAMS ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_INCONSISTENT_PARAMS;
+            case DeauthenticationReasonCode.REASON_MESH_INVALID_SECURITY_CAP ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_INVALID_SECURITY_CAP;
+            case DeauthenticationReasonCode.REASON_MESH_PATH_ERROR_NO_PROXY_INFO ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_PATH_ERROR_NO_PROXY_INFO;
+            case DeauthenticationReasonCode.REASON_MESH_PATH_ERROR_NO_FORWARDING_INFO ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_PATH_ERROR_NO_FORWARDING_INFO;
+            case DeauthenticationReasonCode.REASON_MESH_PATH_ERROR_DEST_UNREACHABLE ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_PATH_ERROR_DEST_UNREACHABLE;
+            case DeauthenticationReasonCode.REASON_MAC_ADDRESS_ALREADY_EXISTS_IN_MBSS ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MAC_ADDRESS_ALREADY_EXISTS_IN_MBSS;
+            case DeauthenticationReasonCode.REASON_MESH_CHANNEL_SWITCH_REGULATORY_REQ ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_CHANNEL_SWITCH_REGULATORY_REQ;
+            case DeauthenticationReasonCode.REASON_MESH_CHANNEL_SWITCH_UNSPECIFIED ->
+                    WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__MESH_CHANNEL_SWITCH_UNSPECIFIED;
+            default -> {
+                Log.e(TAG, "Invalid disconnectReason: " + disconnectReason);
+                yield WifiStatsLog.WIFI_SOFT_AP_CALLBACK_ON_CLIENTS_DISCONNECTED__DISCONNECT_REASON__UNKNOWN;
+            }
+        };
     }
 
     public int getLastUwbState() {

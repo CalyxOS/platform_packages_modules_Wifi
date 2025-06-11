@@ -18,9 +18,9 @@ package com.android.server.wifi.p2p;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -432,15 +432,15 @@ public class SupplicantP2pIfaceCallbackHidlImplTest extends WifiBaseTest {
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryEnterPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, discEventCaptor.getValue().event);
 
         configMethods = WpsConfigMethods.KEYPAD;
         mDut.onProvisionDiscoveryCompleted(
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryShowPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.SHOW_PIN, discEventCaptor.getValue().event);
-        assertEquals(generatedPin, discEventCaptor.getValue().pin);
+        assertEquals(WifiP2pProvDiscEvent.WPS_SHOW_PIN, discEventCaptor.getValue().event);
+        assertEquals(generatedPin, discEventCaptor.getValue().wpsPin);
 
         isRequest = true;
         configMethods = WpsConfigMethods.KEYPAD;
@@ -448,15 +448,15 @@ public class SupplicantP2pIfaceCallbackHidlImplTest extends WifiBaseTest {
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor, times(2)).broadcastP2pProvisionDiscoveryEnterPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.ENTER_PIN, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_ENTER_PIN, discEventCaptor.getValue().event);
 
         configMethods = WpsConfigMethods.DISPLAY;
         mDut.onProvisionDiscoveryCompleted(
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor, times(2)).broadcastP2pProvisionDiscoveryShowPin(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.SHOW_PIN, discEventCaptor.getValue().event);
-        assertEquals(generatedPin, discEventCaptor.getValue().pin);
+        assertEquals(WifiP2pProvDiscEvent.WPS_SHOW_PIN, discEventCaptor.getValue().event);
+        assertEquals(generatedPin, discEventCaptor.getValue().wpsPin);
 
         isRequest = false;
         configMethods = WpsConfigMethods.PUSHBUTTON;
@@ -464,14 +464,14 @@ public class SupplicantP2pIfaceCallbackHidlImplTest extends WifiBaseTest {
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryPbcResponse(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.PBC_RSP, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_RSP, discEventCaptor.getValue().event);
 
         isRequest = true;
         mDut.onProvisionDiscoveryCompleted(
                 p2pDeviceAddr, isRequest, status, configMethods, generatedPin);
         verify(mMonitor).broadcastP2pProvisionDiscoveryPbcRequest(
                 anyString(), discEventCaptor.capture());
-        assertEquals(WifiP2pProvDiscEvent.PBC_REQ, discEventCaptor.getValue().event);
+        assertEquals(WifiP2pProvDiscEvent.WPS_PBC_REQ, discEventCaptor.getValue().event);
     }
 
     private void verifyProvisionDiscoveryFailureEvent(

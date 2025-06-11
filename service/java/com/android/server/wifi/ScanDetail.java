@@ -20,6 +20,7 @@ import android.net.wifi.AnqpInformationElement;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiSsid;
 
+import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -183,6 +184,7 @@ public class ScanDetail {
         }
     }
 
+    @Keep
     public ScanResult getScanResult() {
         return mScanResult;
     }

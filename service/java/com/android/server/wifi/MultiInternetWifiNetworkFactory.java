@@ -182,7 +182,8 @@ public class MultiInternetWifiNetworkFactory extends NetworkFactory {
         NetworkRequestState nrs = new NetworkRequestState(networkRequest,
                 new WifiNetworkSpecifier(
                 wns.ssidPatternMatcher, wns.bssidPatternMatcher, wns.getBand(),
-                wns.wifiConfiguration, wns.getPreferredChannelFrequenciesMhz()),
+                wns.wifiConfiguration, wns.getPreferredChannelFrequenciesMhz(),
+                        wns.isPreferSecondarySta()),
                 isFromSetting,
                 isFromForegroundApp,
                 isFromForegroundAppOrService);

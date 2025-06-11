@@ -42,7 +42,7 @@ public class ScanOnlyModeImpl implements ClientModeDefaults {
     }
 
     @Override
-    public @NonNull BitSet getSupportedFeatures() {
+    public @NonNull BitSet getSupportedFeaturesBitSet() {
         return mWifiNative.getSupportedFeatureSet(mIfaceName);
     }
 

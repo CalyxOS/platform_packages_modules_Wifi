@@ -85,7 +85,7 @@ public class MboOceControllerTest extends WifiBaseTest {
         if (isOceEnabled) {
             featureSet.set(WifiManager.WIFI_FEATURE_OCE);
         }
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(featureSet);
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(featureSet);
 
         mMboOceController.enable();
 

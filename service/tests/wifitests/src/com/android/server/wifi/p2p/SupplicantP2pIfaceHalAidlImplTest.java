@@ -24,13 +24,14 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.AdditionalMatchers.aryEq;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyByte;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyLong;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyByte;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
@@ -43,6 +44,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.app.test.MockAnswerUtil.AnswerWithArguments;
 import android.hardware.wifi.supplicant.FreqRange;
 import android.hardware.wifi.supplicant.ISupplicant;
@@ -54,8 +57,10 @@ import android.hardware.wifi.supplicant.KeyMgmtMask;
 import android.hardware.wifi.supplicant.MacAddress;
 import android.hardware.wifi.supplicant.MiracastMode;
 import android.hardware.wifi.supplicant.P2pConnectInfo;
+import android.hardware.wifi.supplicant.P2pDirInfo;
 import android.hardware.wifi.supplicant.P2pExtListenInfo;
 import android.hardware.wifi.supplicant.P2pFrameTypeMask;
+import android.hardware.wifi.supplicant.P2pPairingBootstrappingMethodMask;
 import android.hardware.wifi.supplicant.SupplicantStatusCode;
 import android.hardware.wifi.supplicant.WpsProvisionMethod;
 import android.net.wifi.CoexUnsafeChannel;
@@ -64,11 +69,16 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
+import android.net.wifi.p2p.WifiP2pDirInfo;
 import android.net.wifi.p2p.WifiP2pExtListenParams;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pGroupList;
 import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.p2p.WifiP2pPairingBootstrappingConfig;
+import android.net.wifi.p2p.WifiP2pUsdBasedLocalServiceAdvertisementConfig;
+import android.net.wifi.p2p.WifiP2pUsdBasedServiceDiscoveryConfig;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
+import android.net.wifi.p2p.nsd.WifiP2pUsdBasedServiceConfig;
 import android.net.wifi.util.Environment;
 import android.os.IBinder;
 import android.os.PersistableBundle;
@@ -123,16 +133,16 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     final String mSsid = "\"SSID\"";
     final byte[] mSsidBytes = {'S', 'S', 'I', 'D'};
     final String mPeerMacAddress = "00:11:22:33:44:55";
-    final byte[] mPeerMacAddressBytes = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55 };
+    final byte[] mPeerMacAddressBytes = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
     final String mGroupOwnerMacAddress = "01:12:23:34:45:56";
-    final byte[] mGroupOwnerMacAddressBytes = { 0x01, 0x12, 0x23, 0x34, 0x45, 0x56 };
+    final byte[] mGroupOwnerMacAddressBytes = {0x01, 0x12, 0x23, 0x34, 0x45, 0x56};
     final String mInvalidMacAddress1 = "00:11:22:33:44";
     final String mInvalidMacAddress2 = ":::::";
     final String mInvalidMacAddress3 = "invalid";
     final byte[] mInvalidMacAddressBytes1 = null;
-    final byte[] mInvalidMacAddressBytes2 = { };
-    final byte[] mInvalidMacAddressBytes3 = { 0x00, 0x01, 0x02, 0x03, 0x04 };
-    final byte[] mInvalidMacAddressBytes4 = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
+    final byte[] mInvalidMacAddressBytes2 = {};
+    final byte[] mInvalidMacAddressBytes3 = {0x00, 0x01, 0x02, 0x03, 0x04};
+    final byte[] mInvalidMacAddressBytes4 = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
     HashSet<String> mInvalidMacAddresses = new HashSet<String>(Arrays.asList(
             mInvalidMacAddress1, mInvalidMacAddress2,
             mInvalidMacAddress3));
@@ -140,7 +150,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     final String mInvalidService1 = null;
     final String mInvalidService2 = "service";
     final String mValidServiceRequestString = "30313233";
-    final byte[] mValidServiceRequestBytes = { 0x30, 0x31, 0x32, 0x33 };
+    final byte[] mValidServiceRequestBytes = {0x30, 0x31, 0x32, 0x33};
     final String mInvalidServiceRequestString = "not a hex string";
     final String mInvalidUpnpService1 = "upnp";
     final String mInvalidUpnpService2 = "upnp 1";
@@ -161,6 +171,18 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     final String mPassphrase = "12345678";
     final int mGroupOwnerBand = WifiP2pConfig.GROUP_OWNER_BAND_5GHZ;
     final boolean mIsPersistent = false;
+
+    private static final String TEST_USD_SERVICE_NAME = "test_service_name";
+    private static final String TEST_GROUP_INTERFACE_NAME = "test_group_if_name";
+    private static final int TEST_USD_PROTOCOL_TYPE = 4;
+    private static final byte[] TEST_USD_SERVICE_SPECIFIC_INFO = {10, 20, 30, 40, 50, 60};
+    private static final int TEST_USD_DISCOVERY_CHANNEL_FREQUENCY_MHZ = 2437;
+    private static final int[] TEST_USD_DISCOVERY_CHANNEL_FREQUENCIES_MHZ = {2412, 2437, 2462};
+    private static final int TEST_USD_TIMEOUT_S = 30;
+    private static final int TEST_USD_SESSION_ID = 3;
+    private static final int TEST_DEV_IK_ID = 2;
+    private static final byte[] TEST_NONCE = {10, 20, 30, 40, 50, 60, 70, 80};
+    private static final byte[] TEST_DIR_TAG = {11, 22, 33, 44, 55, 66, 77, 88};
 
     private class SupplicantP2pIfaceHalSpy extends SupplicantP2pIfaceHalAidlImpl {
         SupplicantP2pIfaceHalSpy() {
@@ -324,7 +346,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testFind_failure() throws Exception {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).find(anyInt());
+                .when(mISupplicantP2pIfaceMock).find(anyInt());
         assertFalse(mDut.find(1));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
@@ -338,13 +360,13 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         doNothing().when(mISupplicantP2pIfaceMock).find(anyInt());
         // Default value when service is not yet initialized.
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_FULL,
-                              WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
 
         executeAndValidateInitializationSequence(false, false);
         assertTrue(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_FULL,
-                             WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_FULL,
-                              WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, -1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, -1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_FULL, 2412, -1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_FULL, -1, 1));
     }
@@ -357,9 +379,9 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testFindFullScan_failure() throws Exception {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).find(anyInt());
+                .when(mISupplicantP2pIfaceMock).find(anyInt());
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_FULL,
-                              WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
     }
@@ -372,13 +394,13 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         doNothing().when(mISupplicantP2pIfaceMock).findOnSocialChannels(anyInt());
         // Default value when service is not yet initialized.
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SOCIAL,
-                              WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
 
         executeAndValidateInitializationSequence(false, false);
         assertTrue(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SOCIAL,
-                             WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SOCIAL,
-                              WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, -1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, -1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SOCIAL, 2412, -1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SOCIAL, -1, 1));
     }
@@ -390,9 +412,9 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testFindSocialOnly_failure() throws Exception {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).findOnSocialChannels(anyInt());
+                .when(mISupplicantP2pIfaceMock).findOnSocialChannels(anyInt());
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SOCIAL,
-                              WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
     }
@@ -412,7 +434,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SINGLE_FREQ, freq, -1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SINGLE_FREQ, -1, 1));
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SINGLE_FREQ,
-                              WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
+                WifiP2pManager.WIFI_P2P_SCAN_FREQ_UNSPECIFIED, 1));
     }
 
     /**
@@ -422,7 +444,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testFindSpecificFrequency_failure() throws Exception {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).findOnSpecificFrequency(anyInt(), anyInt());
+                .when(mISupplicantP2pIfaceMock).findOnSpecificFrequency(anyInt(), anyInt());
         assertFalse(mDut.find(WifiP2pManager.WIFI_P2P_SCAN_SINGLE_FREQ, 2412, 1));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
@@ -447,7 +469,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testStopFind_failure() throws Exception {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).stopFind();
+                .when(mISupplicantP2pIfaceMock).stopFind();
         assertFalse(mDut.stopFind());
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
@@ -1211,9 +1233,9 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testReinvoke_success() throws Exception {
         doNothing().when(mISupplicantP2pIfaceMock).reinvoke(anyInt(), eq(mPeerMacAddressBytes));
         // Default value when service is not initialized.
-        assertFalse(mDut.reinvoke(0, mPeerMacAddress));
+        assertFalse(mDut.reinvoke(0, mPeerMacAddress, -1));
         executeAndValidateInitializationSequence(false, false);
-        assertTrue(mDut.reinvoke(0, mPeerMacAddress));
+        assertTrue(mDut.reinvoke(0, mPeerMacAddress, -1));
     }
 
     /**
@@ -1224,7 +1246,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
         doNothing().when(mISupplicantP2pIfaceMock).reinvoke(anyInt(), eq(mPeerMacAddressBytes));
         for (String address : mInvalidMacAddresses) {
-            assertFalse(mDut.reinvoke(0, address));
+            assertFalse(mDut.reinvoke(0, address, -1));
         }
     }
 
@@ -1236,7 +1258,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
                 .when(mISupplicantP2pIfaceMock).reinvoke(anyInt(), any(byte[].class));
-        assertFalse(mDut.reinvoke(0, mPeerMacAddress));
+        assertFalse(mDut.reinvoke(0, mPeerMacAddress, -1));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
     }
@@ -1249,7 +1271,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new RemoteException()).when(mISupplicantP2pIfaceMock)
                 .reinvoke(anyInt(), any(byte[].class));
-        assertFalse(mDut.reinvoke(0, mPeerMacAddress));
+        assertFalse(mDut.reinvoke(0, mPeerMacAddress, -1));
         // Check service is dead.
         assertFalse(mDut.isInitializationComplete());
     }
@@ -1261,9 +1283,9 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testGroupAdd_success() throws Exception {
         doNothing().when(mISupplicantP2pIfaceMock).addGroup(eq(true), eq(3));
         // Default value when service is not initialized.
-        assertFalse(mDut.groupAdd(3, true));
+        assertFalse(mDut.groupAdd(3, true, false));
         executeAndValidateInitializationSequence(false, false);
-        assertTrue(mDut.groupAdd(3, true));
+        assertTrue(mDut.groupAdd(3, true, false));
     }
 
     /**
@@ -1274,7 +1296,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
                 .when(mISupplicantP2pIfaceMock).addGroup(anyBoolean(), anyInt());
-        assertFalse(mDut.groupAdd(0, true));
+        assertFalse(mDut.groupAdd(0, true, false));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
     }
@@ -1287,7 +1309,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new RemoteException()).when(mISupplicantP2pIfaceMock)
                 .addGroup(anyBoolean(), anyInt());
-        assertFalse(mDut.groupAdd(0, true));
+        assertFalse(mDut.groupAdd(0, true, false));
         // Check service is dead.
         assertFalse(mDut.isInitializationComplete());
     }
@@ -1788,7 +1810,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
                 .when(mISupplicantP2pIfaceMock).addUpnpService(anyInt(), anyString());
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
                 .when(mISupplicantP2pIfaceMock)
-                        .addBonjourService(any(byte[].class), any(byte[].class));
+                .addBonjourService(any(byte[].class), any(byte[].class));
 
         assertFalse(mDut.serviceAdd(createPlaceholderP2pServiceInfo(mValidUpnpService)));
         assertFalse(mDut.serviceAdd(createPlaceholderP2pServiceInfo(mValidBonjourService)));
@@ -1891,7 +1913,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
 
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).removeUpnpService(anyInt(), anyString());
+                .when(mISupplicantP2pIfaceMock).removeUpnpService(anyInt(), anyString());
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
                 .when(mISupplicantP2pIfaceMock).removeBonjourService(any(byte[].class));
 
@@ -2024,7 +2046,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testCancelServiceDiscovery_failure() throws Exception {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).cancelServiceDiscovery(anyLong());
+                .when(mISupplicantP2pIfaceMock).cancelServiceDiscovery(anyLong());
         assertFalse(mDut.cancelServiceDiscovery(SERVICE_IDENTIFIER_STR));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
@@ -2286,7 +2308,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testCancelWps_failure() throws Exception {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
-            .when(mISupplicantP2pIfaceMock).cancelWps(anyString());
+                .when(mISupplicantP2pIfaceMock).cancelWps(anyString());
         assertFalse(mDut.cancelWps(mIfaceName));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
@@ -2404,6 +2426,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
             public byte[] bssid;
             public boolean isGroupOwner;
             public boolean isCurrent;
+
             P2pGroupInfo(String ssid, byte[] bssid, boolean isGroupOwner, boolean isCurrent) {
                 this.ssid = ssid;
                 this.bssid = bssid;
@@ -2465,7 +2488,8 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
                             return groups.get(networkId).isGroupOwner;
                         }
                     }).when(mISupplicantP2pNetworkMock).isGroupOwner();
-                } catch (RemoteException e) { }
+                } catch (RemoteException e) {
+                }
                 return mISupplicantP2pNetworkMock;
             }
         }).when(mISupplicantP2pIfaceMock).getNetwork(anyInt());
@@ -2665,9 +2689,9 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testSetVendorElementsSuccess() throws Exception {
         doNothing().when(mISupplicantP2pIfaceMock).setVendorElements(anyInt(), any());
         executeAndValidateInitializationSequence(false, false);
-        Set<ScanResult.InformationElement> ies =  new HashSet<>();
+        Set<ScanResult.InformationElement> ies = new HashSet<>();
         ies.add(new ScanResult.InformationElement(221, 0, new byte[]{(byte) 0xb}));
-        byte[] iesBytes = new byte[] {(byte) 221, (byte) 1, (byte) 0xb};
+        byte[] iesBytes = new byte[]{(byte) 221, (byte) 1, (byte) 0xb};
 
         assertTrue(mDut.setVendorElements(ies));
         verify(mISupplicantP2pIfaceMock).setVendorElements(
@@ -2682,7 +2706,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     public void testSetVendorElementsSuccessWithEmptyVsieList() throws Exception {
         doNothing().when(mISupplicantP2pIfaceMock).setVendorElements(anyInt(), any());
         executeAndValidateInitializationSequence(false, false);
-        Set<ScanResult.InformationElement> ies =  new HashSet<>();
+        Set<ScanResult.InformationElement> ies = new HashSet<>();
         byte[] iesBytes = new byte[0];
 
         assertTrue(mDut.setVendorElements(ies));
@@ -2711,7 +2735,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
                 .setVendorElements(anyInt(), any(byte[].class));
 
         executeAndValidateInitializationSequence(false, false);
-        Set<ScanResult.InformationElement> ies =  new HashSet<>();
+        Set<ScanResult.InformationElement> ies = new HashSet<>();
 
         assertFalse(mDut.setVendorElements(ies));
         verify(mISupplicantP2pIfaceMock).setVendorElements(
@@ -2787,6 +2811,24 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
             verify(mISupplicantP2pIfaceMock).registerCallback(
                     any(ISupplicantP2pIfaceCallback.class));
         }
+    }
+
+    /**
+     * Create new placeholder WifiP2pConfig instance.
+     */
+    private WifiP2pConfig createP2pConfigWithBootstrappingMethod(@NonNull byte[] macAddress,
+            @WifiP2pPairingBootstrappingConfig.PairingBootstrappingMethod int method,
+            @Nullable String password, boolean authorize) {
+        WifiP2pPairingBootstrappingConfig pairingBootstrappingConfig =
+                new WifiP2pPairingBootstrappingConfig(method, password);
+        WifiP2pConfig config = new WifiP2pConfig.Builder()
+                .setDeviceAddress(NativeUtil.getMacAddressOrNull(
+                        NativeUtil.macAddressFromByteArray(macAddress)))
+                .setPairingBootstrappingConfig(pairingBootstrappingConfig)
+                .setAuthorizeConnectionFromPeerEnabled(authorize)
+                .build();
+        config.groupOwnerIntent = WifiP2pServiceImpl.DEFAULT_GROUP_OWNER_INTENT;
+        return config;
     }
 
     /**
@@ -2868,5 +2910,546 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         mSupplicantDeathCaptor.getValue().binderDied();
         assertFalse(mDut.isInitializationComplete());
         verify(mSupplicantHalDeathHandler, never()).onDeath();
+    }
+
+    /**
+     * Test the handling of start an Un-synchronized Service Discovery (USD) based service
+     * discovery.
+     */
+    @Test
+    public void testStartUsdBasedServiceDiscoverySuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pUsdBasedServiceDiscoveryConfig>
+                usdBasedServiceDiscoveryConfigCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pUsdBasedServiceDiscoveryConfig.class);
+        when(mISupplicantP2pIfaceMock.startUsdBasedServiceDiscovery(any()))
+                .thenReturn(TEST_USD_SESSION_ID);
+
+        WifiP2pUsdBasedServiceConfig usdConfig = new WifiP2pUsdBasedServiceConfig.Builder(
+                TEST_USD_SERVICE_NAME)
+                .setServiceProtocolType(TEST_USD_PROTOCOL_TYPE)
+                .setServiceSpecificInfo(TEST_USD_SERVICE_SPECIFIC_INFO).build();
+        WifiP2pUsdBasedServiceDiscoveryConfig serviceDiscoveryConfig =
+                new WifiP2pUsdBasedServiceDiscoveryConfig.Builder()
+                        .setFrequenciesMhz(TEST_USD_DISCOVERY_CHANNEL_FREQUENCIES_MHZ).build();
+
+        executeAndValidateInitializationSequence(false, false);
+
+        assertEquals(TEST_USD_SESSION_ID, mDut.startUsdBasedServiceDiscovery(usdConfig,
+                serviceDiscoveryConfig, TEST_USD_TIMEOUT_S));
+
+        verify(mISupplicantP2pIfaceMock).startUsdBasedServiceDiscovery(
+                usdBasedServiceDiscoveryConfigCaptor.capture());
+        android.hardware.wifi.supplicant.P2pUsdBasedServiceDiscoveryConfig aidlUsdConfig =
+                usdBasedServiceDiscoveryConfigCaptor.getValue();
+
+        assertEquals(TEST_USD_SERVICE_NAME, aidlUsdConfig.serviceName);
+        assertEquals(TEST_USD_PROTOCOL_TYPE, aidlUsdConfig.serviceProtocolType);
+        assertArrayEquals(TEST_USD_SERVICE_SPECIFIC_INFO, aidlUsdConfig.serviceSpecificInfo);
+        assertEquals(0, aidlUsdConfig.bandMask);
+        assertArrayEquals(TEST_USD_DISCOVERY_CHANNEL_FREQUENCIES_MHZ,
+                aidlUsdConfig.frequencyListMhz);
+        assertEquals(TEST_USD_TIMEOUT_S, aidlUsdConfig.timeoutInSeconds);
+    }
+
+    /**
+     * Test the handling of stop an Un-synchronized Service Discovery (USD) based service discovery.
+     */
+    @Test
+    public void testStopUsdBasedServiceDiscoverySuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+
+        doNothing().when(mISupplicantP2pIfaceMock).stopUsdBasedServiceDiscovery(anyInt());
+
+        executeAndValidateInitializationSequence(false, false);
+
+        mDut.stopUsdBasedServiceDiscovery(TEST_USD_SESSION_ID);
+        verify(mISupplicantP2pIfaceMock).stopUsdBasedServiceDiscovery(eq(TEST_USD_SESSION_ID));
+    }
+
+    /**
+     * Test the handling of start an Un-synchronized Service Discovery (USD) based service
+     * advertisement.
+     */
+    @Test
+    public void testStartUsdBasedServiceAdvertisementSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pUsdBasedServiceAdvertisementConfig>
+                usdBasedServiceAdvertisementConfigCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pUsdBasedServiceAdvertisementConfig.class);
+        when(mISupplicantP2pIfaceMock.startUsdBasedServiceAdvertisement(any()))
+                .thenReturn(TEST_USD_SESSION_ID);
+
+        WifiP2pUsdBasedServiceConfig usdConfig = new WifiP2pUsdBasedServiceConfig.Builder(
+                TEST_USD_SERVICE_NAME)
+                .setServiceProtocolType(TEST_USD_PROTOCOL_TYPE)
+                .setServiceSpecificInfo(TEST_USD_SERVICE_SPECIFIC_INFO).build();
+        WifiP2pUsdBasedLocalServiceAdvertisementConfig serviceAdvertisementConfig =
+                new WifiP2pUsdBasedLocalServiceAdvertisementConfig.Builder()
+                        .setFrequencyMhz(TEST_USD_DISCOVERY_CHANNEL_FREQUENCY_MHZ).build();
+
+        executeAndValidateInitializationSequence(false, false);
+
+        assertEquals(TEST_USD_SESSION_ID, mDut.startUsdBasedServiceAdvertisement(usdConfig,
+                serviceAdvertisementConfig, TEST_USD_TIMEOUT_S));
+
+        verify(mISupplicantP2pIfaceMock).startUsdBasedServiceAdvertisement(
+                usdBasedServiceAdvertisementConfigCaptor.capture());
+        android.hardware.wifi.supplicant.P2pUsdBasedServiceAdvertisementConfig aidlUsdConfig =
+                usdBasedServiceAdvertisementConfigCaptor.getValue();
+
+        assertEquals(TEST_USD_SERVICE_NAME, aidlUsdConfig.serviceName);
+        assertEquals(TEST_USD_PROTOCOL_TYPE, aidlUsdConfig.serviceProtocolType);
+        assertArrayEquals(TEST_USD_SERVICE_SPECIFIC_INFO, aidlUsdConfig.serviceSpecificInfo);
+        assertEquals(TEST_USD_DISCOVERY_CHANNEL_FREQUENCY_MHZ, aidlUsdConfig.frequencyMHz);
+        assertEquals(TEST_USD_TIMEOUT_S, aidlUsdConfig.timeoutInSeconds);
+    }
+
+    /**
+     * Test the handling of stop an Un-synchronized Service Discovery (USD) based service
+     * advertisement.
+     */
+    @Test
+    public void testStopUsdBasedServiceAdvertisementSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+
+        doNothing().when(mISupplicantP2pIfaceMock).stopUsdBasedServiceAdvertisement(anyInt());
+
+        executeAndValidateInitializationSequence(false, false);
+
+        mDut.stopUsdBasedServiceAdvertisement(TEST_USD_SESSION_ID);
+        verify(mISupplicantP2pIfaceMock).stopUsdBasedServiceAdvertisement(eq(TEST_USD_SESSION_ID));
+    }
+
+    /**
+     * Test the handling of getting the Device Identity Resolution (DIR) Information.
+     */
+    @Test
+    public void testGetDirInfoSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+
+        P2pDirInfo aidlDirInfo = new P2pDirInfo();
+        aidlDirInfo.cipherVersion = P2pDirInfo.CipherVersion.DIRA_CIPHER_VERSION_128_BIT;
+        aidlDirInfo.deviceInterfaceMacAddress = mPeerMacAddressBytes;
+        aidlDirInfo.dirTag = TEST_DIR_TAG;
+        aidlDirInfo.nonce = TEST_NONCE;
+
+        doReturn(aidlDirInfo).when(mISupplicantP2pIfaceMock).getDirInfo();
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pDirInfo dirInfo = mDut.getDirInfo();
+        assertNotNull(dirInfo);
+        assertEquals(android.net.MacAddress.fromBytes(mPeerMacAddressBytes),
+                dirInfo.getMacAddress());
+        assertArrayEquals(TEST_DIR_TAG, dirInfo.getDirTag());
+        assertArrayEquals(TEST_NONCE, dirInfo.getNonce());
+    }
+
+    /**
+     * Test the handling of Validating the Device Identity Resolution (DIR) Information
+     */
+    @Test
+    public void testValidateDirInfoSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+
+        WifiP2pDirInfo dirInfo = new WifiP2pDirInfo(
+                android.net.MacAddress.fromBytes(mPeerMacAddressBytes), TEST_NONCE, TEST_DIR_TAG);
+
+
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pDirInfo>
+                p2pDirInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pDirInfo.class);
+        when(mISupplicantP2pIfaceMock.validateDirInfo(any())).thenReturn(TEST_DEV_IK_ID);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        assertEquals(TEST_DEV_IK_ID, mDut.validateDirInfo(dirInfo));
+
+        verify(mISupplicantP2pIfaceMock).validateDirInfo(
+                p2pDirInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pDirInfo aidlDirInfo = p2pDirInfoCaptor.getValue();
+        assertEquals(P2pDirInfo.CipherVersion.DIRA_CIPHER_VERSION_128_BIT,
+                aidlDirInfo.cipherVersion);
+        assertArrayEquals(mPeerMacAddressBytes, aidlDirInfo.deviceInterfaceMacAddress);
+        assertArrayEquals(TEST_DIR_TAG, aidlDirInfo.dirTag);
+        assertArrayEquals(TEST_NONCE, aidlDirInfo.nonce);
+    }
+
+    /**
+     * Test the handling of groupAdd with P2P version.
+     */
+    @Test
+    public void testCreateGroupOwnerSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doNothing().when(mISupplicantP2pIfaceMock).addGroup(anyBoolean(), anyInt());
+        doNothing().when(mISupplicantP2pIfaceMock).createGroupOwner(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pCreateGroupOwnerInfo>
+                p2pGroupInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pCreateGroupOwnerInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        assertTrue(mDut.groupAdd(-1, false, true));
+        verify(mISupplicantP2pIfaceMock, never()).addGroup(anyBoolean(), anyInt());
+        verify(mISupplicantP2pIfaceMock).createGroupOwner(
+                p2pGroupInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pCreateGroupOwnerInfo aidlGroupInfo =
+                p2pGroupInfoCaptor.getValue();
+        assertFalse(aidlGroupInfo.persistent);
+        assertEquals(-1, aidlGroupInfo.persistentNetworkId);
+        assertTrue(aidlGroupInfo.isP2pV2);
+    }
+
+    /**
+     * Test the handling of ProvisionDiscovery with pairing bootstrapping method.
+     */
+    @Test
+    public void testProvisionDiscoveryWithBootStrappingMethodSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doNothing().when(mISupplicantP2pIfaceMock).provisionDiscoveryWithParams(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pProvisionDiscoveryParams>
+                p2pProvDiscParamsCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pProvisionDiscoveryParams.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC,
+                "", false);
+        assertTrue(mDut.provisionDiscovery(config));
+        verify(mISupplicantP2pIfaceMock).provisionDiscoveryWithParams(
+                p2pProvDiscParamsCaptor.capture());
+        android.hardware.wifi.supplicant.P2pProvisionDiscoveryParams aidlProvDiscParams =
+                p2pProvDiscParamsCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlProvDiscParams.peerMacAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlProvDiscParams.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OPPORTUNISTIC,
+                aidlProvDiscParams.pairingBootstrappingMethod);
+    }
+
+    /**
+     * Test the mapping of user provided pairing bootstrapping method to the method filled in
+     * provision discovery request packet.
+     */
+    @Test
+    public void testProvisionDiscovery() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        executeAndValidateInitializationSequence(false, false);
+        testProvisionDiscoveryBootstrappingMethodMapping(WifiP2pPairingBootstrappingConfig
+                        .PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PINCODE, "1234",
+                P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PINCODE, 4);
+        testProvisionDiscoveryBootstrappingMethodMapping(WifiP2pPairingBootstrappingConfig
+                        .PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PASSPHRASE,
+                "abed", P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PASSPHRASE, 4);
+        testProvisionDiscoveryBootstrappingMethodMapping(WifiP2pPairingBootstrappingConfig
+                        .PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE,
+                "", P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PINCODE, 4);
+        testProvisionDiscoveryBootstrappingMethodMapping(WifiP2pPairingBootstrappingConfig
+                        .PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE,
+                "", P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PASSPHRASE, 4);
+        testProvisionDiscoveryBootstrappingMethodMapping(WpsInfo.DISPLAY, "",
+                WpsProvisionMethod.KEYPAD, 3);
+        testProvisionDiscoveryBootstrappingMethodMapping(WpsInfo.KEYPAD, "12345670",
+                WpsProvisionMethod.DISPLAY, 3);
+        testProvisionDiscoveryBootstrappingMethodMapping(WpsInfo.PBC, "",
+                WpsProvisionMethod.PBC, 3);
+    }
+
+    private void testProvisionDiscoveryBootstrappingMethodMapping(int frameworkMethod,
+            String passwordOrPin, int expectedAidlMethod, int serviceVersion) throws Exception {
+        setCachedServiceVersion(serviceVersion);
+        if (serviceVersion >= 4) { // Version 4 and above use provisionDiscoveryWithParams
+            doNothing().when(mISupplicantP2pIfaceMock).provisionDiscoveryWithParams(argThat(
+                    params -> params.pairingBootstrappingMethod == expectedAidlMethod
+                            && params.provisionMethod == WpsProvisionMethod.NONE));
+        } else { // Version 3 and below use the older provisionDiscovery
+            doNothing().when(mISupplicantP2pIfaceMock).provisionDiscovery(
+                    aryEq(mPeerMacAddressBytes), eq(expectedAidlMethod));
+        }
+
+        WifiP2pConfig config;
+        if (serviceVersion >= 4) {
+            config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                    frameworkMethod, passwordOrPin, false);
+        } else {
+            config = createPlaceholderP2pConfig(mPeerMacAddress, frameworkMethod,
+                    passwordOrPin);
+        }
+
+        assertTrue(mDut.provisionDiscovery(config));
+
+        // Verification is handled by the ArgumentMatcher in doNothing().when().
+    }
+
+    /**
+     * Test that a ProvisionDiscovery request with pairing bootstrapping method Out Of Band fails.
+     */
+    @Test
+    public void testProvisionDiscoveryForOobBootstrappingFails() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doNothing().when(mISupplicantP2pIfaceMock).provisionDiscoveryWithParams(any());
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_OUT_OF_BAND,
+                "1234", false);
+        assertFalse(mDut.provisionDiscovery(config));
+    }
+
+    /**
+     * Test the handling of connect with pairing bootstrapping method: Opportunistic.
+     */
+    @Test
+    public void testConnectWithBootStrappingMethodOpportunisticSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doReturn("").when(mISupplicantP2pIfaceMock).connectWithParams(any());
+
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pConnectInfo>
+                connectInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pConnectInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC,
+                "", false);
+        assertTrue(mDut.connect(config, false).isEmpty());
+        verify(mISupplicantP2pIfaceMock).connectWithParams(connectInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pConnectInfo aidlConnectInfo =
+                connectInfoCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlConnectInfo.peerAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlConnectInfo.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OPPORTUNISTIC,
+                aidlConnectInfo.pairingBootstrappingMethod);
+        assertTrue(TextUtils.isEmpty(aidlConnectInfo.password));
+        assertEquals(0, aidlConnectInfo.frequencyMHz);
+        assertFalse(aidlConnectInfo.authorizeConnectionFromPeer);
+        assertNull(aidlConnectInfo.groupInterfaceName);
+    }
+
+    /**
+     * Test the handling of connect with pairing bootstrapping method: display pin-code.
+     */
+    @Test
+    public void testConnectWithBootStrappingMethodDisplayPinCodeSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doReturn("").when(mISupplicantP2pIfaceMock).connectWithParams(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pConnectInfo>
+                connectInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pConnectInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PINCODE,
+                "1234", false);
+        assertTrue(mDut.connect(config, false).isEmpty());
+        verify(mISupplicantP2pIfaceMock).connectWithParams(connectInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pConnectInfo aidlConnectInfo =
+                connectInfoCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlConnectInfo.peerAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlConnectInfo.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PINCODE,
+                aidlConnectInfo.pairingBootstrappingMethod);
+        assertEquals("1234", aidlConnectInfo.password);
+        assertEquals(0, aidlConnectInfo.frequencyMHz);
+        assertFalse(aidlConnectInfo.authorizeConnectionFromPeer);
+        assertNull(aidlConnectInfo.groupInterfaceName);
+    }
+
+    /**
+     * Test the handling of connect with pairing bootstrapping method: display passphrase.
+     */
+    @Test
+    public void testConnectWithBootStrappingMethodDisplayPassphraseSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doReturn("").when(mISupplicantP2pIfaceMock).connectWithParams(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pConnectInfo>
+                connectInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pConnectInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PASSPHRASE,
+                "abed", false);
+        assertTrue(mDut.connect(config, false).isEmpty());
+        verify(mISupplicantP2pIfaceMock).connectWithParams(connectInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pConnectInfo aidlConnectInfo =
+                connectInfoCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlConnectInfo.peerAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlConnectInfo.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_DISPLAY_PASSPHRASE,
+                aidlConnectInfo.pairingBootstrappingMethod);
+        assertEquals("abed", aidlConnectInfo.password);
+    }
+
+    /**
+     * Test the handling of connect with pairing bootstrapping method: keypad pin-code.
+     */
+    @Test
+    public void testConnectWithBootStrappingMethodKeypadPinCodeSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doReturn("").when(mISupplicantP2pIfaceMock).connectWithParams(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pConnectInfo>
+                connectInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pConnectInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE,
+                "", false);
+        config.getPairingBootstrappingConfig().setPairingBootstrappingPassword("1234");
+        assertTrue(mDut.connect(config, false).isEmpty());
+        verify(mISupplicantP2pIfaceMock).connectWithParams(connectInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pConnectInfo aidlConnectInfo =
+                connectInfoCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlConnectInfo.peerAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlConnectInfo.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PINCODE,
+                aidlConnectInfo.pairingBootstrappingMethod);
+        assertEquals("1234", aidlConnectInfo.password);
+    }
+
+    /**
+     * Test the handling of connect with pairing bootstrapping method: keypad passphrase.
+     */
+    @Test
+    public void testConnectWithBootStrappingMethodKeypadPassphraseSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doReturn("").when(mISupplicantP2pIfaceMock).connectWithParams(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pConnectInfo>
+                connectInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pConnectInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE,
+                "", false);
+        config.getPairingBootstrappingConfig().setPairingBootstrappingPassword("abed");
+        assertTrue(mDut.connect(config, false).isEmpty());
+        verify(mISupplicantP2pIfaceMock).connectWithParams(connectInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pConnectInfo aidlConnectInfo =
+                connectInfoCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlConnectInfo.peerAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlConnectInfo.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_KEYPAD_PASSPHRASE,
+                aidlConnectInfo.pairingBootstrappingMethod);
+        assertEquals("abed", aidlConnectInfo.password);
+    }
+
+    /**
+     * Test the handling of connect with pairing bootstrapping method: out of band
+     */
+    @Test
+    public void testConnectWithBootStrappingMethodOutOfBandSuccess() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doReturn("").when(mISupplicantP2pIfaceMock).connectWithParams(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pConnectInfo>
+                connectInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pConnectInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_OUT_OF_BAND,
+                "", false);
+        config.getPairingBootstrappingConfig().setPairingBootstrappingPassword("abed");
+        assertTrue(mDut.connect(config, false).isEmpty());
+        verify(mISupplicantP2pIfaceMock).connectWithParams(connectInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pConnectInfo aidlConnectInfo =
+                connectInfoCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlConnectInfo.peerAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlConnectInfo.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OUT_OF_BAND,
+                aidlConnectInfo.pairingBootstrappingMethod);
+        assertEquals("abed", aidlConnectInfo.password);
+    }
+
+    /**
+     * Test the handling of authorize connection request to an existing group owner.
+     */
+    @Test
+    public void testAuthorizeConnectRequestOnGroupOwner() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        doReturn("").when(mISupplicantP2pIfaceMock).connectWithParams(any());
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pConnectInfo>
+                connectInfoCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pConnectInfo.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        WifiP2pConfig config = createP2pConfigWithBootstrappingMethod(mPeerMacAddressBytes,
+                WifiP2pPairingBootstrappingConfig.PAIRING_BOOTSTRAPPING_METHOD_OUT_OF_BAND,
+                "1234", true);
+        assertTrue(mDut.authorizeConnectRequestOnGroupOwner(config,
+                TEST_GROUP_INTERFACE_NAME));
+        verify(mISupplicantP2pIfaceMock).connectWithParams(connectInfoCaptor.capture());
+        android.hardware.wifi.supplicant.P2pConnectInfo aidlConnectInfo =
+                connectInfoCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlConnectInfo.peerAddress);
+        assertEquals(WpsProvisionMethod.NONE, aidlConnectInfo.provisionMethod);
+        assertEquals(P2pPairingBootstrappingMethodMask.BOOTSTRAPPING_OUT_OF_BAND,
+                aidlConnectInfo.pairingBootstrappingMethod);
+        assertEquals(TEST_GROUP_INTERFACE_NAME, aidlConnectInfo.groupInterfaceName);
+        assertTrue(aidlConnectInfo.authorizeConnectionFromPeer);
+    }
+
+    /**
+     * Test the handling of reinvokePersistentGroup() with P2P version.
+     */
+    @Test
+    public void testReinvokeVersionHandling() throws Exception {
+        assumeTrue(Environment.isSdkAtLeastB());
+        setCachedServiceVersion(4);
+        ArgumentCaptor<android.hardware.wifi.supplicant.P2pReinvokePersistentGroupParams>
+                persistentGroupParamsCaptor = ArgumentCaptor.forClass(
+                android.hardware.wifi.supplicant.P2pReinvokePersistentGroupParams.class);
+
+        executeAndValidateInitializationSequence(false, false);
+
+        // Successful case.
+        doNothing().when(mISupplicantP2pIfaceMock).reinvoke(anyInt(), any());
+        doNothing().when(mISupplicantP2pIfaceMock).reinvokePersistentGroup(any());
+        assertTrue(mDut.reinvoke(-1, mPeerMacAddress, TEST_DEV_IK_ID));
+        verify(mISupplicantP2pIfaceMock).reinvokePersistentGroup(
+                persistentGroupParamsCaptor.capture());
+        android.hardware.wifi.supplicant.P2pReinvokePersistentGroupParams
+                aidlPersistentGroupParams = persistentGroupParamsCaptor.getValue();
+        assertArrayEquals(mPeerMacAddressBytes, aidlPersistentGroupParams.peerMacAddress);
+        assertEquals(-1, aidlPersistentGroupParams.persistentNetworkId);
+        assertEquals(TEST_DEV_IK_ID, aidlPersistentGroupParams.deviceIdentityEntryId);
+
+        // Invalid network ID and DIK ID
+        assertFalse(mDut.reinvoke(-1, mPeerMacAddress, -1));
+
+        // Valid network ID and invalid DIK ID - Reinvoke P2P V1 group
+        assertTrue(mDut.reinvoke(2, mPeerMacAddress, -1));
+        verify(mISupplicantP2pIfaceMock).reinvoke(eq(2), eq(mPeerMacAddressBytes));
+
+        // Valid network ID and invalid DIK ID on older HAL - Reinvoke P2P V1 group with old HAL
+        setCachedServiceVersion(3);
+        assertTrue(mDut.reinvoke(1, mPeerMacAddress, -1));
+        verify(mISupplicantP2pIfaceMock).reinvoke(eq(1), eq(mPeerMacAddressBytes));
     }
 }

@@ -1528,7 +1528,7 @@ package android.net.wifi.aware {
   }
 
   public final class Characteristics implements android.os.Parcelable {
-    method @FlaggedApi("com.android.ranging.flags.ranging_rtt_enabled") public int getMaxSupportedRangingPktBandwidth();
+    method @FlaggedApi("com.android.ranging.flags.ranging_rtt_enabled") public int getMaxSupportedRangingPacketBandwidth();
     method @FlaggedApi("com.android.ranging.flags.ranging_rtt_enabled") public int getMaxSupportedRxChains();
     method @FlaggedApi("com.android.ranging.flags.ranging_rtt_enabled") public boolean isPeriodicRangingSupported();
     field @FlaggedApi("com.android.ranging.flags.ranging_rtt_enabled") public static final int SUPPORTED_RX_CHAINS_1 = 1; // 0x1
@@ -2015,17 +2015,12 @@ package android.net.wifi.usd {
 
   @FlaggedApi("android.net.wifi.flags.usd") public class UsdManager {
     method @Nullable @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public android.net.wifi.usd.Characteristics getCharacteristics();
-    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public boolean isPublisherAvailable();
-    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public boolean isSubscriberAvailable();
     method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void publish(@NonNull android.net.wifi.usd.PublishConfig, @NonNull java.util.concurrent.Executor, @NonNull android.net.wifi.usd.PublishSessionCallback);
-    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void registerAvailabilityCallback(@NonNull java.util.concurrent.Executor, @NonNull android.net.wifi.usd.UsdManager.AvailabilityCallback);
+    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void registerPublisherStatusListener(@NonNull java.util.concurrent.Executor, @NonNull java.util.function.Consumer<java.lang.Boolean>);
+    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void registerSubscriberStatusListener(@NonNull java.util.concurrent.Executor, @NonNull java.util.function.Consumer<java.lang.Boolean>);
     method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void subscribe(@NonNull android.net.wifi.usd.SubscribeConfig, @NonNull java.util.concurrent.Executor, @NonNull android.net.wifi.usd.SubscribeSessionCallback);
-    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void unregisterAvailabilityCallback(@NonNull android.net.wifi.usd.UsdManager.AvailabilityCallback);
-  }
-
-  public static interface UsdManager.AvailabilityCallback {
-    method public default void onPublisherAvailable();
-    method public default void onSubscriberAvailable();
+    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void unregisterPublisherStatusListener(@NonNull java.util.function.Consumer<java.lang.Boolean>);
+    method @RequiresPermission(android.Manifest.permission.MANAGE_WIFI_NETWORK_SELECTION) public void unregisterSubscriberStatusListener(@NonNull java.util.function.Consumer<java.lang.Boolean>);
   }
 
 }

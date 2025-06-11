@@ -74,7 +74,7 @@ public class ScanResultMatchInfoTest extends WifiBaseTest {
         when(mWifiInjector.getWifiGlobals()).thenReturn(mWifiGlobals);
         when(mWifiInjector.getActiveModeWarden()).thenReturn(mActiveModeWarden);
         when(mActiveModeWarden.getPrimaryClientModeManager()).thenReturn(mClientModeManager);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(WIFI_FEATURE_OWE, WIFI_FEATURE_WPA3_SAE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
         when(mWifiGlobals.isOweUpgradeEnabled()).thenReturn(true);

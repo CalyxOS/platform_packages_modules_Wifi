@@ -62,7 +62,7 @@ public class MboOceController {
         if (clientModeManager == null) {
             return;
         }
-        BitSet supportedFeatures = clientModeManager.getSupportedFeatures();
+        BitSet supportedFeatures = clientModeManager.getSupportedFeaturesBitSet();
         mIsMboSupported = supportedFeatures.get(WIFI_FEATURE_MBO);
         mIsOceSupported = supportedFeatures.get(WIFI_FEATURE_OCE);
         mEnabled = true;

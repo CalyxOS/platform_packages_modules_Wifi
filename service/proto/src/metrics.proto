@@ -2535,6 +2535,8 @@ message WifiLinkLayerUsageStats {
   repeated RadioStats radio_stats = 11;
 }
 
+// WifiUsabilityStatsEntry will only be uploaded when its timestamp is within the data capture
+// period
 message WifiUsabilityStatsEntry {
   // Status codes for link probe status
   enum LinkProbeStatus {
@@ -2815,6 +2817,14 @@ message WifiUsabilityStatsEntry {
   optional int32 capture_event_type_subcode = 64;
 
   optional int32 status_data_stall = 65;
+
+  // If the full data capture is being stored (field isFullCapture is true in the function call
+  // WifiManager.storeCapturedData), this field will represent the time offset between this sample
+  // and the first sample in the capture buffer. i.e. this field will have the value 0 for the
+  // first sample in the capture buffer.
+  // If isFullCapture is false, then this field will be the time offset between the capture start
+  // time and the timestamp of this sample.
+  optional int64 timestamp_offset_ms = 66;
 }
 
 message ContentionTimeStats {
@@ -3104,7 +3114,7 @@ message ScanResultWithSameFreq {
   optional int32 rssi = 2;
 
   // The center frequency of the primary 20 MHz frequency (in MHz) of the channel
-  optional int32 frequencyMhz = 3;
+  optional int32 frequency_mhz = 3;
 }
 
 message WifiUsabilityStats {
@@ -3169,6 +3179,13 @@ message WifiUsabilityStatsTraining {
   optional int64 capture_start_timestamp_secs = 2;
 
   optional TrainingData training_data = 3;
+
+  // If isFullCapture is true in the WifiManager.storeCaptureData call, this represents the time
+  // offset between the last sample in the capture buffer and the time the capture buffer was
+  // stored. If ring buffer is empty (no last sample), we set store_time_offset_ms to 0.
+  // If isFullCapture is false, this represents the time between 'capture period stop time' and the
+  // time the capture buffer was stored.
+  optional int64 store_time_offset_ms = 4;
 }
 
 message DeviceMobilityStatePnoScanStats {

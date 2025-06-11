@@ -159,7 +159,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
         when(mWifiInjector.getWifiGlobals()).thenReturn(mWifiGlobals);
         when(mWifiGlobals.getWifiLowConnectedScoreThresholdToTriggerScanForMbb()).thenReturn(
                 ConnectedScore.WIFI_TRANSITION_SCORE);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(new BitSet());
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(new BitSet());
         when(mActiveModeWarden.getPrimaryClientModeManager()).thenReturn(mClientModeManager);
         if (WifiNetworkSelector.PRESET_CANDIDATE_SCORER_NAME.equals(
                 mThroughputScorer.getIdentifier())) {
@@ -2288,7 +2288,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
         int[] levels = {mThresholdMinimumRssi2G, mThresholdMinimumRssi5G + RSSI_BUMP,
                 mThresholdMinimumRssi2G + RSSI_BUMP};
         mPlaceholderNominator.setNominatorToSelectCandidate(false);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(WIFI_FEATURE_OWE));
 
         List<ScanDetail> scanDetails = WifiNetworkSelectorTestUtil.buildScanDetails(
@@ -2328,7 +2328,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
 
         BitSet supportedFeatures = new BitSet();
         supportedFeatures.set(WIFI_FEATURE_OWE, false);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(supportedFeatures);
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(supportedFeatures);
 
         List<ScanDetail> scanDetails = WifiNetworkSelectorTestUtil.buildScanDetails(
                 ssids, bssids, freqs, caps, levels, mClock);
@@ -2859,7 +2859,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testSaeAutoUpgradeWithPskNetworkWhenAutoUpgradeEnabled() {
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WIFI_FEATURE_WPA3_SAE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
         when(mWifiGlobals.isWpa3SaeUpgradeOffloadEnabled()).thenReturn(true);
@@ -2915,7 +2915,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testSaeAutoUpgradeWithPskNetworkWhenPskTypeIsDisabled() {
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WIFI_FEATURE_WPA3_SAE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
         when(mWifiGlobals.isWpa3SaeUpgradeOffloadEnabled()).thenReturn(false);
@@ -2951,7 +2951,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testSaeNoAutoUpgradeWithPskNetworkWhenAutoUpgradeDisabled() {
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WIFI_FEATURE_WPA3_SAE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(false);
         when(mWifiGlobals.isWpa3SaeUpgradeOffloadEnabled()).thenReturn(false);
@@ -2985,7 +2985,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testSaeNoAutoUpgradeWithPskNetworkWhenSaeNotSupported() {
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(new BitSet());
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(new BitSet());
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
         when(mWifiGlobals.isWpa3SaeUpgradeOffloadEnabled()).thenReturn(true);
 
@@ -3021,7 +3021,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testOweAutoUpgradeWithOpenNetworkWhenAutoUpgradeEnabled() {
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(WIFI_FEATURE_OWE));
         when(mWifiGlobals.isOweUpgradeEnabled()).thenReturn(true);
 
@@ -3064,7 +3064,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testOweAutoUpgradeWithOpenNetworkWhenOpenTypeIsDisabled() {
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(WIFI_FEATURE_OWE));
         when(mWifiGlobals.isOweUpgradeEnabled()).thenReturn(true);
 
@@ -3100,7 +3100,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testOweNoAutoUpgradeWithOpenNetworkWhenAutoUpgradeDisabled() {
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(WIFI_FEATURE_OWE));
         when(mWifiGlobals.isOweUpgradeEnabled()).thenReturn(false);
 
@@ -3133,7 +3133,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testOweNoAutoUpgradeWithOweNetworkWhenOweNotSupported() {
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(new BitSet());
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(new BitSet());
         when(mWifiGlobals.isOweUpgradeEnabled()).thenReturn(true);
 
         when(mScanRequestProxy.isOpenOnlyNetworkInRange(eq(TEST_AUTO_UPGRADE_SSID)))
@@ -3242,7 +3242,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
 
     @Test
     public void verifySecurityParamsSelectionForPskSaeConfigAndSaeScan() {
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WIFI_FEATURE_WPA3_SAE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
         setupMultiConfigAndSingleScanAndVerify("[RSN-SAE-CCMP][ESS][MFPR]",
@@ -3253,14 +3253,14 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
     public void verifySecurityParamsSelectionForPskSaeConfigAndSaeScanNegative() {
         BitSet supportedFeatures = new BitSet();
         supportedFeatures.set(WIFI_FEATURE_WPA3_SAE, false);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(supportedFeatures);
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(supportedFeatures);
         setupMultiConfigAndSingleScanAndVerify("[RSN-SAE-CCMP][ESS][MFPR]",
                 SECURITY_PSK | SECURITY_SAE, -1);
     }
 
     @Test
     public void verifySecurityParamsSelectionForOpenOweConfigAndOweScan() {
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(WIFI_FEATURE_OWE));
         when(mWifiGlobals.isOweUpgradeEnabled()).thenReturn(true);
         setupMultiConfigAndSingleScanAndVerify("[OWE-SAE-CCMP][ESS][MFPR]",
@@ -3271,7 +3271,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
     public void verifySecurityParamsSelectionForOpenOweConfigAndOweScanNegative() {
         BitSet supportedFeatures = new BitSet();
         supportedFeatures.set(WIFI_FEATURE_OWE, false);
-        when(mClientModeManager.getSupportedFeatures()).thenReturn(supportedFeatures);
+        when(mClientModeManager.getSupportedFeaturesBitSet()).thenReturn(supportedFeatures);
         setupMultiConfigAndSingleScanAndVerify("[OWE-SAE-CCMP][ESS][MFPR]",
                 SECURITY_NONE | SECURITY_OWE, -1);
     }
@@ -3325,7 +3325,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testPskWithPskOnlyForPskSaeTransitionNetworks() {
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WIFI_FEATURE_WPA3_SAE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
         when(mWifiGlobals.isWpa3SaeUpgradeOffloadEnabled()).thenReturn(true);
@@ -3363,7 +3363,7 @@ public class WifiNetworkSelectorTest extends WifiBaseTest {
      */
     @Test
     public void testNetworkSelectionForUserSelectedNetwork() {
-        when(mClientModeManager.getSupportedFeatures())
+        when(mClientModeManager.getSupportedFeaturesBitSet())
                 .thenReturn(createCapabilityBitset(WIFI_FEATURE_WPA3_SAE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);
 

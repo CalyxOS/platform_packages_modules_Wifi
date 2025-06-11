@@ -131,4 +131,15 @@ interface IHostapdHal {
      * Dump information about the specific implementation.
      */
     void dump(PrintWriter pw);
+
+    /**
+     * Removes an existing link from multiple link device which the current AP resides on.
+     * Note: It is being implemented for AIDL interface only.
+     *
+     * @param ifaceName Name of the iface.
+     * @param apIfaceInstance The identity of the link which associated to the multiple link device
+     *                        that the current AP resides on.
+     */
+    default void removeLinkFromMultipleLinkBridgedApIface(@NonNull String ifaceName,
+            @NonNull String apIfaceInstance) {};
 }

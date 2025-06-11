@@ -26,18 +26,23 @@ import android.net.wifi.CoexUnsafeChannel;
 import android.net.wifi.ScanResult;
 import android.net.wifi.nl80211.WifiNl80211Manager;
 import android.net.wifi.p2p.WifiP2pConfig;
+import android.net.wifi.p2p.WifiP2pDirInfo;
 import android.net.wifi.p2p.WifiP2pDiscoveryConfig;
 import android.net.wifi.p2p.WifiP2pExtListenParams;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pGroupList;
 import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.p2p.WifiP2pUsdBasedLocalServiceAdvertisementConfig;
+import android.net.wifi.p2p.WifiP2pUsdBasedServiceDiscoveryConfig;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
+import android.net.wifi.p2p.nsd.WifiP2pUsdBasedServiceConfig;
 import android.net.wifi.util.Environment;
 import android.os.Handler;
 import android.os.WorkSource;
 import android.text.TextUtils;
 import android.util.Log;
-import android.util.SparseArray;
+
+import androidx.annotation.Keep;
 
 import com.android.server.wifi.HalDeviceManager;
 import com.android.server.wifi.PropertyService;
@@ -490,6 +495,7 @@ public class WifiP2pNative {
      *
      * @return boolean value indicating whether operation was successful.
      */
+    @Keep
     public boolean setP2pPowerSave(String iface, boolean enabled) {
         return mSupplicantP2pIfaceHal.setPowerSave(iface, enabled);
     }
@@ -696,11 +702,12 @@ public class WifiP2pNative {
      * This is a helper method that invokes groupAdd(networkId, isPersistent) internally.
      *
      * @param persistent Used to request a persistent group to be formed.
+     * @param isP2pV2 Used to start a Group Owner that support P2P2 IE.
      *
      * @return true, if operation was successful.
      */
-    public boolean p2pGroupAdd(boolean persistent) {
-        return mSupplicantP2pIfaceHal.groupAdd(persistent);
+    public boolean p2pGroupAdd(boolean persistent, boolean isP2pV2) {
+        return mSupplicantP2pIfaceHal.groupAdd(persistent, isP2pV2);
     }
 
     /**
@@ -709,11 +716,12 @@ public class WifiP2pNative {
      * group owner.
      *
      * @param netId Used to specify the restart of a persistent group.
+     * @param isP2pV2 Used to start a Group Owner that support P2P2 IE.
      *
      * @return true, if operation was successful.
      */
-    public boolean p2pGroupAdd(int netId) {
-        return mSupplicantP2pIfaceHal.groupAdd(netId, true);
+    public boolean p2pGroupAdd(int netId, boolean isP2pV2) {
+        return mSupplicantP2pIfaceHal.groupAdd(netId, true, isP2pV2);
     }
 
     /**
@@ -857,13 +865,15 @@ public class WifiP2pNative {
     /**
      * Reinvoke a device from a persistent group.
      *
-     * @param netId Used to specify the persistent group.
+     * @param netId Used to specify the persistent group (valid only for P2P V1 group).
      * @param deviceAddress MAC address of the device to reinvoke.
+     * @param dikId The identifier of device identity key of the device to reinvoke.
+     *              (valid only for P2P V2 group).
      *
      * @return true, if operation was successful.
      */
-    public boolean p2pReinvoke(int netId, String deviceAddress) {
-        return mSupplicantP2pIfaceHal.reinvoke(netId, deviceAddress);
+    public boolean p2pReinvoke(int netId, String deviceAddress, int dikId) {
+        return mSupplicantP2pIfaceHal.reinvoke(netId, deviceAddress, dikId);
     }
 
     /**
@@ -1093,18 +1103,6 @@ public class WifiP2pNative {
     }
 
     /**
-     * Returns whether P2P + P2P concurrency is supported or not.
-     */
-    public boolean isP2pP2pConcurrencySupported() {
-        synchronized (mLock) {
-            return mWifiVendorHal.canDeviceSupportCreateTypeCombo(
-                    new SparseArray<Integer>() {{
-                        put(HDM_CREATE_IFACE_P2P, 2);
-                    }});
-        }
-    }
-
-    /**
      * Configure the IP addresses in supplicant for P2P GO to provide the IP address to
      * client in EAPOL handshake. Refer Wi-Fi P2P Technical Specification v1.7 - Section  4.2.8
      * IP Address Allocation in EAPOL-Key Frames (4-Way Handshake) for more details.
@@ -1122,4 +1120,89 @@ public class WifiP2pNative {
         return mSupplicantP2pIfaceHal.configureEapolIpAddressAllocationParams(ipAddressGo,
                 ipAddressMask, ipAddressStart, ipAddressEnd);
     }
+
+    /**
+     * Start an Un-synchronized Service Discovery (USD) based P2P service discovery.
+     *
+     * @param usdServiceConfig is the USD based service configuration.
+     * @param discoveryConfig is the configuration for this service discovery request.
+     * @param timeoutInSeconds is the maximum time to be spent for this service discovery request.
+     */
+    public int startUsdBasedServiceDiscovery(WifiP2pUsdBasedServiceConfig usdServiceConfig,
+            WifiP2pUsdBasedServiceDiscoveryConfig discoveryConfig, int timeoutInSeconds) {
+        return mSupplicantP2pIfaceHal.startUsdBasedServiceDiscovery(usdServiceConfig,
+                discoveryConfig, timeoutInSeconds);
+    }
+
+    /**
+     * Stop an Un-synchronized Service Discovery (USD) based P2P service discovery.
+     *
+     * @param sessionId Identifier to cancel the service discovery instance.
+     *        Use zero to cancel all the service discovery instances.
+     */
+    public void stopUsdBasedServiceDiscovery(int sessionId) {
+        mSupplicantP2pIfaceHal.stopUsdBasedServiceDiscovery(sessionId);
+    }
+
+    /**
+     * Start an Un-synchronized Service Discovery (USD) based P2P service advertisement.
+     *
+     * @param usdServiceConfig is the USD based service configuration.
+     * @param advertisementConfig is the configuration for this service advertisement.
+     * @param timeoutInSeconds is the maximum time to be spent for this service advertisement.
+     */
+    public int startUsdBasedServiceAdvertisement(WifiP2pUsdBasedServiceConfig usdServiceConfig,
+            WifiP2pUsdBasedLocalServiceAdvertisementConfig advertisementConfig,
+            int timeoutInSeconds) {
+        return mSupplicantP2pIfaceHal.startUsdBasedServiceAdvertisement(usdServiceConfig,
+                advertisementConfig, timeoutInSeconds);
+    }
+
+    /**
+     * Stop an Un-synchronized Service Discovery (USD) based P2P service advertisement.
+     *
+     * @param sessionId Identifier to cancel the service advertisement.
+     *        Use zero to cancel all the service advertisement instances.
+     */
+    public void stopUsdBasedServiceAdvertisement(int sessionId) {
+        mSupplicantP2pIfaceHal.stopUsdBasedServiceAdvertisement(sessionId);
+    }
+
+    /**
+     * Get the Device Identity Resolution (DIR) Information.
+     * See {@link WifiP2pDirInfo} for details
+     *
+     * @return {@link WifiP2pDirInfo} instance on success, null on failure.
+     */
+    public WifiP2pDirInfo getDirInfo() {
+        return mSupplicantP2pIfaceHal.getDirInfo();
+    }
+
+    /**
+     * Validate the Device Identity Resolution (DIR) Information of a P2P device.
+     * See {@link WifiP2pDirInfo} for details.
+     *
+     * @param dirInfo {@link WifiP2pDirInfo} to validate.
+     * @return The identifier of device identity key on success, -1 on failure.
+     */
+    public int validateDirInfo(@NonNull WifiP2pDirInfo dirInfo) {
+        return mSupplicantP2pIfaceHal.validateDirInfo(dirInfo);
+    }
+
+    /**
+     * Used to authorize a connection request to an existing Group Owner
+     * interface, to allow a peer device to connect.
+     *
+     * @param config Configuration to use for connection.
+     * @param groupOwnerInterfaceName Group Owner interface name on which the request to connect
+     *                           needs to be authorized.
+     *
+     * @return boolean value indicating whether operation was successful.
+     */
+    public boolean authorizeConnectRequestOnGroupOwner(
+            WifiP2pConfig config, String groupOwnerInterfaceName) {
+        return mSupplicantP2pIfaceHal.authorizeConnectRequestOnGroupOwner(config,
+                groupOwnerInterfaceName);
+    }
+
 }

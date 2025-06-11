@@ -41,6 +41,8 @@ import android.util.Log;
 import android.util.LruCache;
 import android.util.Pair;
 
+import androidx.annotation.Keep;
+
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
@@ -569,6 +571,7 @@ public class ScanRequestProxy {
      * a list of {@link ScanResult} objects.
      * @return the list of results
      */
+    @Keep
     public List<ScanResult> getScanResults() {
         // return a copy to prevent external modification
         return new ArrayList<>(combineScanResultsCache().values());

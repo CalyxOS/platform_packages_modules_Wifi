@@ -68,7 +68,7 @@ public class SavedNetworkNominatorTest extends WifiBaseTest {
         when(mWifiInjector.getActiveModeWarden()).thenReturn(mActiveModeWarden);
         when(mWifiInjector.getWifiGlobals()).thenReturn(mWifiGlobals);
         when(mActiveModeWarden.getPrimaryClientModeManager()).thenReturn(mPrimaryClientModeManager);
-        when(mPrimaryClientModeManager.getSupportedFeatures()).thenReturn(
+        when(mPrimaryClientModeManager.getSupportedFeaturesBitSet()).thenReturn(
                 createCapabilityBitset(
                         WifiManager.WIFI_FEATURE_WPA3_SAE, WifiManager.WIFI_FEATURE_OWE));
         when(mWifiGlobals.isWpa3SaeUpgradeEnabled()).thenReturn(true);

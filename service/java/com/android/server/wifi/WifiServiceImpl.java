@@ -70,6 +70,7 @@ import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_WEP_ALLOWED;
 import android.Manifest;
 import android.annotation.AnyThread;
 import android.annotation.CheckResult;
+import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.AlarmManager;
@@ -85,6 +86,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -229,10 +231,12 @@ import com.android.server.wifi.proto.WifiStatsLog;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.UserActionEvent;
 import com.android.server.wifi.util.ActionListenerWrapper;
 import com.android.server.wifi.util.ApConfigUtil;
+import com.android.server.wifi.util.FeatureBitsetUtils;
 import com.android.server.wifi.util.GeneralUtil.Mutable;
 import com.android.server.wifi.util.LastCallerInfoManager;
 import com.android.server.wifi.util.RssiUtil;
 import com.android.server.wifi.util.WifiPermissionsUtil;
+import com.android.server.wifi.util.WorkSourceHelper;
 import com.android.wifi.flags.FeatureFlags;
 import com.android.wifi.resources.R;
 
@@ -245,6 +249,8 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.security.GeneralSecurityException;
@@ -288,6 +294,40 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
     // Settings.Global.WIFI_OFF_TIMEOUT
     private static final String WIFI_OFF_TIMEOUT = "wifi_off_timeout";
+
+    private static final int SCORER_BINDING_STATE_INVALID = -1;
+    // The system is brining up the scorer service.
+    private static final int SCORER_BINDING_STATE_BRINGING_UP = 0;
+    private static final int SCORER_BINDING_STATE_CONNECTED = 1;
+    private static final int SCORER_BINDING_STATE_DISCONNECTED = 2;
+    private static final int SCORER_BINDING_STATE_BINDING_DIED = 3;
+    // A null binder is received.
+    private static final int SCORER_BINDING_STATE_NULL_BINDING = 4;
+    // The system couldn't find the service to bind to.
+    private static final int SCORER_BINDING_STATE_NO_SERVICE = 5;
+    // The app has cleared the Wi-Fi scorer. So the service is unbound.
+    private static final int SCORER_BINDING_STATE_CLEARED = 6;
+    // The app has set a new Wi-Fi scorer. Rebind to the service.
+    public static final int SCORER_BINDING_STATE_REBINDING = 7;
+
+    @IntDef(prefix = { "SCORER_BINDING_STATE_" }, value = {
+        SCORER_BINDING_STATE_INVALID,
+        SCORER_BINDING_STATE_BRINGING_UP,
+        SCORER_BINDING_STATE_CONNECTED,
+        SCORER_BINDING_STATE_DISCONNECTED,
+        SCORER_BINDING_STATE_BINDING_DIED,
+        SCORER_BINDING_STATE_NULL_BINDING,
+        SCORER_BINDING_STATE_NO_SERVICE,
+        SCORER_BINDING_STATE_CLEARED,
+        SCORER_BINDING_STATE_REBINDING
+
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    private @interface ScorerBindingState {}
+
+    private @ScorerBindingState int mLastScorerBindingState = SCORER_BINDING_STATE_INVALID;
+    @VisibleForTesting
+    ScorerServiceConnection mScorerServiceConnection;
 
     private final ActiveModeWarden mActiveModeWarden;
     private final ScanRequestProxy mScanRequestProxy;
@@ -367,6 +407,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
     private final WifiSettingsConfigStore mSettingsConfigStore;
     private final WifiResourceCache mResourceCache;
+    private boolean mIsUsdSupported = false;
 
     /**
      * Callback for use with LocalOnlyHotspot to unregister requesting applications upon death.
@@ -402,6 +443,112 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                         mTetheredSoftApTracker.getSoftApCapability(),
                         WifiManager.IFACE_IP_MODE_TETHERED);
             }, this.getClass().getSimpleName() + "#onActiveDataSubscriptionIdChanged");
+        }
+    }
+
+    private class ScorerServiceConnection implements ServiceConnection {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            Log.i(TAG, "ScorerServiceConnection.onServiceConnected(" + name + ", " + binder + ")");
+            if (binder == null) {
+                mWifiThreadRunner.post(() -> unbindScorerService(SCORER_BINDING_STATE_NULL_BINDING),
+                        "ScorerServiceConnection#onServiceConnected");
+            } else {
+                mWifiThreadRunner.post(() -> {
+                    mLastScorerBindingState = SCORER_BINDING_STATE_CONNECTED;
+                }, "ScorerServiceConnection#onServiceConnected");
+            }
+        }
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.w(TAG, "ScorerServiceConnection.onServiceDisconnected(" + name + ")");
+            mWifiThreadRunner.post(() -> unbindScorerService(SCORER_BINDING_STATE_DISCONNECTED),
+                    "ScorerServiceConnection#onServiceDisconnected");
+        }
+
+        @Override
+        public void onBindingDied(ComponentName name) {
+            Log.w(TAG, "ScorerServiceConnection.onBindingDied(" + name + ")");
+            mWifiThreadRunner.post(() -> unbindScorerService(SCORER_BINDING_STATE_BINDING_DIED),
+                    "ScorerServiceConnection#onBindingDied");
+        }
+
+        @Override
+        public void onNullBinding(ComponentName name) {
+            Log.i(TAG, "Wifi scorer service " + name + " - onNullBinding");
+            mWifiThreadRunner.post(() -> unbindScorerService(SCORER_BINDING_STATE_NULL_BINDING),
+                    "ScorerServiceConnection#onNullBinding");
+        }
+    }
+
+    /**
+     * Bind to the scorer service to prevent the process of the external scorer from freezing.
+     */
+    private void bindScorerService(int scorerUid) {
+        if (mScorerServiceConnection != null) {
+            Log.i(TAG, "bindScorerService() service is already bound. Unbind it now.");
+            unbindScorerService(SCORER_BINDING_STATE_REBINDING);
+        }
+
+        mLastScorerBindingState = SCORER_BINDING_STATE_NO_SERVICE;
+        PackageManager pm = mContext.getPackageManager();
+        if (pm == null) {
+            Log.e(TAG, "PackageManager is null!");
+            return;
+        } else {
+            String[] packageNames = pm.getPackagesForUid(scorerUid);
+            for (String packageName : packageNames) {
+                if (!TextUtils.isEmpty(packageName)) {
+                    mScorerServiceConnection = new ScorerServiceConnection();
+                    if (bindScorerServiceAsSystemUser(packageName, mScorerServiceConnection)) {
+                        mLastScorerBindingState = SCORER_BINDING_STATE_BRINGING_UP;
+                        return;
+                    } else {
+                        unbindScorerService(SCORER_BINDING_STATE_NO_SERVICE);
+                    }
+                } else {
+                    Log.d(TAG, "bindScorerService() packageName is empty");
+                }
+            }
+        }
+    }
+
+    private boolean bindScorerServiceAsSystemUser(@NonNull String packageName,
+            @NonNull ServiceConnection serviceConnection) {
+        Intent intent = new Intent("android.wifi.ScorerService");
+        intent.setPackage(packageName);
+        try {
+            if (mContext.bindServiceAsUser(intent, serviceConnection,
+                    Context.BIND_AUTO_CREATE | Context.BIND_FOREGROUND_SERVICE,
+                    UserHandle.SYSTEM)) {
+                Log.i(TAG, "bindScorerServiceAsSystemUser(): Bringing up service: " + packageName);
+                return true;
+            }
+        } catch (SecurityException ex) {
+            Log.e(TAG, "Fail to bindServiceAsSystemUser(): " + ex);
+        } catch (Exception ex) {
+            // Just make sure that it won't crash WiFi process
+            Log.e(TAG, "Fail to bindServiceAsSystemUser(): " + ex);
+        }
+        return false;
+    }
+
+    /**
+     * Unbind scorer service to let the system freeze the process of the external scorer freely.
+     */
+    private void unbindScorerService(@ScorerBindingState int state) {
+        mLastScorerBindingState = state;
+        if (mScorerServiceConnection != null) {
+            Log.i(TAG, "unbindScorerService(" + state + ")");
+            try {
+                mContext.unbindService(mScorerServiceConnection);
+            } catch (Exception e) {
+                Log.e(TAG, "Fail to unbindService! " + e);
+            }
+            mScorerServiceConnection = null;
+        } else {
+            Log.i(TAG, "unbindScorerService(" + state
+                    + ") mScorerServiceConnection is already null.");
         }
     }
 
@@ -475,6 +622,14 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                 @SapClientBlockedReason int blockedReason) {}
 
         /**
+         * Checks the AttributionSource of a callback and returns true if the AttributionSource
+         * has the correct permissions. This should be extended by child classes.
+         */
+        boolean checkCallbackPermission(@Nullable Object broadcastCookie) {
+            return true;
+        }
+
+        /**
          * Notify register the state of soft AP changed.
          */
         public void notifyRegisterOnStateChanged(RemoteCallbackList<ISoftApCallback> callbacks,
@@ -482,6 +637,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             int itemCount = callbacks.beginBroadcast();
             for (int i = 0; i < itemCount; i++) {
                 try {
+                    if (!checkCallbackPermission(callbacks.getBroadcastCookie(i))) {
+                        continue;
+                    }
                     callbacks.getBroadcastItem(i).onStateChanged(state);
                 } catch (RemoteException e) {
                     Log.e(TAG, "onStateChanged: remote exception -- " + e);
@@ -501,6 +659,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             int itemCount = callbacks.beginBroadcast();
             for (int i = 0; i < itemCount; i++) {
                 try {
+                    if (!checkCallbackPermission(callbacks.getBroadcastCookie(i))) {
+                        continue;
+                    }
                     callbacks.getBroadcastItem(i).onConnectedClientsOrInfoChanged(
                             ApConfigUtil.deepCopyForSoftApInfoMap(infos),
                             ApConfigUtil.deepCopyForWifiClientListMap(
@@ -522,6 +683,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             int itemCount = callbacks.beginBroadcast();
             for (int i = 0; i < itemCount; i++) {
                 try {
+                    if (!checkCallbackPermission(callbacks.getBroadcastCookie(i))) {
+                        continue;
+                    }
                     callbacks.getBroadcastItem(i).onCapabilityChanged(capability);
                 } catch (RemoteException e) {
                     Log.e(TAG, "onCapabilityChanged: remote exception -- " + e);
@@ -544,6 +708,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             int itemCount = callbacks.beginBroadcast();
             for (int i = 0; i < itemCount; i++) {
                 try {
+                    if (!checkCallbackPermission(callbacks.getBroadcastCookie(i))) {
+                        continue;
+                    }
                     callbacks.getBroadcastItem(i).onBlockedClientConnecting(client, blockedReason);
                 } catch (RemoteException e) {
                     Log.e(TAG, "onBlockedClientConnecting: remote exception -- " + e);
@@ -565,6 +732,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             int itemCount = callbacks.beginBroadcast();
             for (int i = 0; i < itemCount; i++) {
                 try {
+                    if (!checkCallbackPermission(callbacks.getBroadcastCookie(i))) {
+                        continue;
+                    }
                     callbacks.getBroadcastItem(i).onClientsDisconnected(new SoftApInfo(info),
                             clients);
                 } catch (RemoteException e) {
@@ -643,6 +813,11 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         mAfcManager = mWifiInjector.getAfcManager();
         mTwtManager = mWifiInjector.getTwtManager();
         mWepNetworkUsageController = mWifiInjector.getWepNetworkUsageController();
+        if (Environment.isSdkAtLeastB()) {
+            mIsUsdSupported = mContext.getResources().getBoolean(
+                    mContext.getResources().getIdentifier("config_deviceSupportsWifiUsd", "bool",
+                            "android"));
+        }
     }
 
     /**
@@ -753,6 +928,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                         public void onReceive(Context context, Intent intent) {
                             Log.d(TAG, "locale changed");
                             resetNotificationManager();
+                            mResourceCache.handleLocaleChange();
                         }
                     },
                     new IntentFilter(Intent.ACTION_LOCALE_CHANGED),
@@ -820,6 +996,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     private void resetCarrierNetworks(@ClientModeImpl.ResetSimReason int resetReason) {
+        mResourceCache.reset();
         Log.d(TAG, "resetting carrier networks since SIM was changed");
         if (resetReason == RESET_SIM_REASON_SIM_INSERTED) {
             // clear all SIM related notifications since some action was taken to address
@@ -2018,7 +2195,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
         mLog.info("startTetheredHotspot uid=%").c(callingUid).flush();
         startTetheredHotspotInternal(new SoftApModeConfiguration(
-                WifiManager.IFACE_IP_MODE_TETHERED, null /* config */,
+                WifiManager.IFACE_IP_MODE_TETHERED,
+                com.android.net.flags.Flags.tetheringWithSoftApConfig()
+                        ? request.getSoftApConfiguration() : null,
                 mTetheredSoftApTracker.getSoftApCapability(),
                 mCountryCode.getCountryCode(), request), callingUid, packageName, callback);
     }
@@ -2205,9 +2384,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                         Log.e(TAG, "Country code not consistent! expect " + countryCode + " actual "
                                 + mCountryCode.getCurrentDriverCountryCode());
                     }
-                    // Store Soft AP channels for reference after a reboot before the driver is up.
-                    mSettingsConfigStore.put(WifiSettingsConfigStore.WIFI_SOFT_AP_COUNTRY_CODE,
-                            countryCode);
                     List<Integer> freqs = new ArrayList<>();
                     SparseArray<int[]> channelMap = new SparseArray<>(
                             SoftApConfiguration.BAND_TYPES.length);
@@ -2227,9 +2403,17 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                             channelMap.put(band, channel);
                         }
                     }
-                    mSettingsConfigStore.put(
-                            WifiSettingsConfigStore.WIFI_AVAILABLE_SOFT_AP_FREQS_MHZ,
-                            new JSONArray(freqs).toString());
+                    if (!mCountryCode.isDriverCountryCodeWorldMode()
+                            || TextUtils.isEmpty(mSettingsConfigStore.get(
+                                    WifiSettingsConfigStore.WIFI_SOFT_AP_COUNTRY_CODE))) {
+                        // Store Soft AP channels (non-world mode CC or no save before) for
+                        // reference after a reboot before the driver is up.
+                        mSettingsConfigStore.put(WifiSettingsConfigStore.WIFI_SOFT_AP_COUNTRY_CODE,
+                                countryCode);
+                        mSettingsConfigStore.put(
+                                WifiSettingsConfigStore.WIFI_AVAILABLE_SOFT_AP_FREQS_MHZ,
+                                new JSONArray(freqs).toString());
+                    }
                     mTetheredSoftApTracker.updateAvailChannelListInSoftApCapability(countryCode,
                             channelMap);
                     mLohsSoftApTracker.updateAvailChannelListInSoftApCapability(countryCode,
@@ -2433,8 +2617,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                     getSoftApCapability(), countryCode, channelMap));
         }
 
-        public boolean registerSoftApCallback(ISoftApCallback callback) {
-            if (!mRegisteredSoftApCallbacks.register(callback)) {
+        public boolean registerSoftApCallback(ISoftApCallback callback, Object cookie) {
+            if (!mRegisteredSoftApCallbacks.register(callback, cookie)) {
                 return false;
             }
 
@@ -2572,6 +2756,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
      * Implements LOHS behavior on top of the existing SoftAp API.
      */
     private final class LohsSoftApTracker extends BaseSoftApTracker {
+        private static final int UNSPECIFIED_PID = -1;
+
         @GuardedBy("mLocalOnlyHotspotRequests")
         private final HashMap<Integer, LocalOnlyHotspotRequestInfo>
                 mLocalOnlyHotspotRequests = new HashMap<>();
@@ -2588,11 +2774,30 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         private boolean mIsExclusive = false;
 
         @GuardedBy("mLocalOnlyHotspotRequests")
+        private WorkSource mCurrentWs = null;
+
+        @GuardedBy("mLocalOnlyHotspotRequests")
         private String mLohsInterfaceName;
 
         @GuardedBy("mLocalOnlyHotspotRequests")
         private int mLohsInterfaceMode = WifiManager.IFACE_IP_MODE_UNSPECIFIED;
 
+        @GuardedBy("mLocalOnlyHotspotRequests")
+        private int mPidRestartingLohsFor = UNSPECIFIED_PID;
+        @Override
+        public boolean checkCallbackPermission(@Nullable Object broadcastCookie) {
+            if (!SdkLevel.isAtLeastS()) {
+                // AttributionSource requires at least S.
+                return false;
+            }
+            if (!(broadcastCookie instanceof AttributionSource)) {
+                return false;
+            }
+            return mWifiPermissionsUtil.checkNearbyDevicesPermission(
+                    (AttributionSource) broadcastCookie,
+                    false /* checkForLocation */,
+                    TAG + " " + this.getClass().getSimpleName() + "#checkCallbackPermission");
+        }
         public void updateInterfaceIpState(String ifaceName, int mode) {
             // update interface IP state related to local-only hotspot
             synchronized (mLocalOnlyHotspotRequests) {
@@ -2678,6 +2883,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
             // Since all callers were notified, now clear the registrations.
             mLocalOnlyHotspotRequests.clear();
+            mPidRestartingLohsFor = UNSPECIFIED_PID;
         }
 
         /**
@@ -2716,14 +2922,35 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                 // Never accept exclusive requests (with custom configuration) at the same time as
                 // shared requests.
                 if (!mLocalOnlyHotspotRequests.isEmpty()) {
-                    boolean requestIsExclusive = request.getCustomConfig() != null;
-                    if (mIsExclusive || requestIsExclusive) {
+                    final boolean requestIsExclusive = request.getCustomConfig() != null;
+                    final int newRequestorWsPriority = mWifiInjector
+                            .makeWsHelper(request.getWorkSource()).getRequestorWsPriority();
+                    final int currentWsPriority = mWifiInjector
+                            .makeWsHelper(mCurrentWs).getRequestorWsPriority();
+                    final boolean isCurrentLohsWorksOnNonDefaultBand = mActiveConfig != null
+                            && mActiveConfig.getSoftApConfiguration().getBand()
+                                    != SoftApConfiguration.BAND_2GHZ;
+                    Log.d(TAG, "Receive multiple LOHS requestors,"
+                                + ", requestIsExclusive: " + requestIsExclusive
+                                + ", mIsExclusive: " + mIsExclusive
+                                + ", currentWsPriority: " + currentWsPriority
+                                + ", newRequestorWsPriority: " + newRequestorWsPriority);
+                    if (requestIsExclusive || mIsExclusive
+                            || (currentWsPriority >= newRequestorWsPriority
+                                    && isCurrentLohsWorksOnNonDefaultBand)) {
                         mLog.trace("Cannot share with existing LOHS request due to custom config")
                                 .flush();
                         return LocalOnlyHotspotCallback.ERROR_GENERIC;
                     }
+                    if (mFeatureFlags.publicBandsForLohs() && isCurrentLohsWorksOnNonDefaultBand) {
+                        // Current LOHS is not using 2.4 band, and new caller priority is higher.
+                        // stop all and logging the new requestor pid.
+                        mLog.trace("Restarting LOHS to default band for new requestor")
+                                .flush();
+                        mLohsSoftApTracker.stopAll();
+                        mPidRestartingLohsFor = pid;
+                    }
                 }
-
                 // At this point, the request is accepted.
                 if (mLocalOnlyHotspotRequests.isEmpty()) {
                     mWifiThreadRunner.post(() -> {
@@ -2740,7 +2967,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                         return LocalOnlyHotspotCallback.ERROR_GENERIC;
                     }
                 }
-
                 mLocalOnlyHotspotRequests.put(pid, request);
                 return LocalOnlyHotspotCallback.REQUEST_REGISTERED;
             }
@@ -2748,14 +2974,22 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
         @GuardedBy("mLocalOnlyHotspotRequests")
         private void startForFirstRequestLocked(LocalOnlyHotspotRequestInfo request) {
+            mCurrentWs = request.getWorkSource();
+            final int currentWsPriority = mWifiInjector.makeWsHelper(mCurrentWs)
+                    .getRequestorWsPriority();
+            if (mFeatureFlags.publicBandsForLohs() && Environment.isSdkAtLeastB()) {
+                mIsExclusive = (request.getCustomConfig() != null)
+                        && currentWsPriority >= WorkSourceHelper.PRIORITY_SYSTEM;
+            } else {
+                mIsExclusive = (request.getCustomConfig() != null);
+            }
             final SoftApCapability lohsCapability = mLohsSoftApTracker.getSoftApCapability();
             SoftApConfiguration softApConfig = mWifiApConfigStore.generateLocalOnlyHotspotConfig(
-                    mContext, request.getCustomConfig(), lohsCapability);
+                    mContext, request.getCustomConfig(), lohsCapability, mIsExclusive);
 
             mActiveConfig = new SoftApModeConfiguration(
                     WifiManager.IFACE_IP_MODE_LOCAL_ONLY,
                     softApConfig, lohsCapability, mCountryCode.getCountryCode(), null);
-            mIsExclusive = (request.getCustomConfig() != null);
             // Report the error if we got failure in startSoftApInternal
             if (!startSoftApInternal(mActiveConfig, request.getWorkSource(), null)) {
                 onStateChanged(new SoftApState(
@@ -2811,7 +3045,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             if (mLocalOnlyHotspotRequests.isEmpty()) {
                 mActiveConfig = null;
                 mIsExclusive = false;
+                mCurrentWs = null;
                 mLohsInterfaceName = null;
+                mPidRestartingLohsFor = UNSPECIFIED_PID;
                 mLohsInterfaceMode = WifiManager.IFACE_IP_MODE_UNSPECIFIED;
                 stopSoftApInternal(WifiManager.IFACE_IP_MODE_LOCAL_ONLY);
             }
@@ -2861,6 +3097,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                     // also need to clear interface ip state
                     updateInterfaceIpState(mLohsInterfaceName,
                             WifiManager.IFACE_IP_MODE_UNSPECIFIED);
+                    // failed, reset restarting pid info
+                    mPidRestartingLohsFor = UNSPECIFIED_PID;
                 } else if (state == WIFI_AP_STATE_DISABLING || state == WIFI_AP_STATE_DISABLED) {
                     // softap is shutting down or is down...  let requestors know via the
                     // onStopped call
@@ -2871,12 +3109,22 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                         // holding the required lock: send message to requestors and clear the list
                         sendHotspotStoppedMessageToAllLOHSRequestInfoEntriesLocked();
                     } else {
-                        // LOHS not active: report an error (still holding the required lock)
-                        sendHotspotFailedMessageToAllLOHSRequestInfoEntriesLocked(ERROR_GENERIC);
+                        // The LOHS is being restarted since there is a mPidRestartingLohsFor,
+                        // We should expect there will be DISABLING and DISABLED.
+                        // No need to report error.
+                        if (mPidRestartingLohsFor == UNSPECIFIED_PID) {
+                            // LOHS not active: report an error.
+                            sendHotspotFailedMessageToAllLOHSRequestInfoEntriesLocked(
+                                    ERROR_GENERIC);
+                        }
                     }
                     // also clear interface ip state
                     updateInterfaceIpState(mLohsInterfaceName,
                             WifiManager.IFACE_IP_MODE_UNSPECIFIED);
+                } else if (state ==  WIFI_AP_STATE_ENABLING
+                        && mPidRestartingLohsFor != UNSPECIFIED_PID) {
+                    // restarting, reset pid info
+                    mPidRestartingLohsFor = UNSPECIFIED_PID;
                 }
                 // For enabling and enabled, just record the new state
                 setState(softApState);
@@ -2918,7 +3166,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
         // post operation to handler thread
         mWifiThreadRunner.post(() -> {
-            if (!mTetheredSoftApTracker.registerSoftApCallback(callback)) {
+            if (!mTetheredSoftApTracker.registerSoftApCallback(callback, null)) {
                 Log.e(TAG, "registerSoftApCallback: Failed to add callback");
                 return;
             }
@@ -2960,8 +3208,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
      * softap mode changes.
      */
     @VisibleForTesting
-    void registerLOHSForTest(int pid, LocalOnlyHotspotRequestInfo request) {
-        mLohsSoftApTracker.start(pid, request);
+    int registerLOHSForTest(int pid, LocalOnlyHotspotRequestInfo request) {
+        return mLohsSoftApTracker.start(pid, request);
     }
 
     /**
@@ -3100,15 +3348,18 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
     @Override
     public void registerLocalOnlyHotspotSoftApCallback(ISoftApCallback callback, Bundle extras) {
+        if (!SdkLevel.isAtLeastT()) {
+            throw new UnsupportedOperationException();
+        }
+
         // verify arguments
         if (callback == null) {
             throw new IllegalArgumentException("Callback must not be null");
         }
 
-        int uid = Binder.getCallingUid();
-        int pid = Binder.getCallingPid();
-        mWifiPermissionsUtil.enforceNearbyDevicesPermission(
-                extras.getParcelable(WifiManager.EXTRA_PARAM_KEY_ATTRIBUTION_SOURCE),
+        AttributionSource attributionSource =
+                extras.getParcelable(WifiManager.EXTRA_PARAM_KEY_ATTRIBUTION_SOURCE);
+        mWifiPermissionsUtil.enforceNearbyDevicesPermission(attributionSource,
                 false, TAG + " registerLocalOnlyHotspotSoftApCallback");
 
         if (mVerboseLoggingEnabled) {
@@ -3118,9 +3369,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
         // post operation to handler thread
         mWifiThreadRunner.post(() -> {
-            if (!mLohsSoftApTracker.registerSoftApCallback(callback)) {
+            if (!mLohsSoftApTracker.registerSoftApCallback(callback, attributionSource)) {
                 Log.e(TAG, "registerLocalOnlyHotspotSoftApCallback: Failed to add callback");
-                return;
             }
         }, TAG + "#registerLocalOnlyHotspotSoftApCallback");
     }
@@ -3131,8 +3381,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         if (callback == null) {
             throw new IllegalArgumentException("Callback must not be null");
         }
-        int uid = Binder.getCallingUid();
-        int pid = Binder.getCallingPid();
 
         mWifiPermissionsUtil.enforceNearbyDevicesPermission(
                 extras.getParcelable(WifiManager.EXTRA_PARAM_KEY_ATTRIBUTION_SOURCE),
@@ -3450,7 +3698,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         if (needToLogSupportedFeatures(supportedFeatures)) {
             mLog.info("isFeatureSupported uid=% returns %")
                     .c(Binder.getCallingUid())
-                    .c(supportedFeatures.toString())
+                    .c(FeatureBitsetUtils.formatSupportedFeatures(supportedFeatures))
                     .flush();
         }
         return supportedFeatures.get(feature);
@@ -5814,7 +6062,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                         mContext, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0));
                 pw.println("mInIdleMode " + mInIdleMode);
                 pw.println("mScanPending " + mScanPending);
-                pw.println("SupportedFeatures: " + getSupportedFeaturesInternal());
+                pw.println("SupportedFeatures: " + getSupportedFeaturesString());
                 pw.println("SettingsStore:");
                 mSettingsStore.dump(fd, pw, args);
                 mActiveModeWarden.dump(fd, pw, args);
@@ -5892,6 +6140,12 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                     pw.println();
                     mWepNetworkUsageController.dump(fd, pw, args);
                 }
+                if (mScorerServiceConnection != null) {
+                    pw.println("boundToExternalScorer successfully");
+                } else {
+                    pw.println("boundToExternalScorer=failure, lastScorerBindingState="
+                            + mLastScorerBindingState);
+                }
             }
         }, TAG + "#dump");
     }
@@ -5963,19 +6217,20 @@ public class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     @Override
-    public void acquireMulticastLock(IBinder binder, String tag) {
+    public void acquireMulticastLock(IBinder binder, String lockTag, String attributionTag,
+            String packageName) {
         enforceMulticastChangePermission();
         int uid = Binder.getCallingUid();
-        mLog.info("acquireMulticastLock uid=% tag=%").c(uid).c(tag).flush();
-        mWifiMulticastLockManager.acquireLock(uid, binder, tag);
+        mLog.info("acquireMulticastLock uid=% lockTag=%").c(uid).c(lockTag).flush();
+        mWifiMulticastLockManager.acquireLock(uid, binder, lockTag, attributionTag, packageName);
     }
 
     @Override
-    public void releaseMulticastLock(IBinder binder, String tag) {
+    public void releaseMulticastLock(IBinder binder, String lockTag) {
         enforceMulticastChangePermission();
         int uid = Binder.getCallingUid();
-        mLog.info("releaseMulticastLock uid=% tag=%").c(uid).c(tag).flush();
-        mWifiMulticastLockManager.releaseLock(uid, binder, tag);
+        mLog.info("releaseMulticastLock uid=% lockTag=%").c(uid).c(lockTag).flush();
+        mWifiMulticastLockManager.releaseLock(uid, binder, lockTag);
     }
 
     @Override
@@ -6454,6 +6709,10 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         // Post operation to handler thread
         mWifiThreadRunner.post(() -> mWifiTrafficPoller.removeCallback(callback),
                 TAG + "#unregisterTrafficStateCallback");
+    }
+
+    protected String getSupportedFeaturesString() {
+        return FeatureBitsetUtils.formatSupportedFeatures(getSupportedFeaturesInternal());
     }
 
     private BitSet getSupportedFeaturesInternal() {
@@ -7565,6 +7824,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         if (mVerboseLoggingEnabled) {
             mLog.info("setWifiConnectedNetworkScorer uid=%").c(callingUid).flush();
         }
+        mWifiThreadRunner.post(() -> bindScorerService(callingUid));
         // Post operation to handler thread
         return mWifiThreadRunner.call(
                 () -> mActiveModeWarden.setWifiConnectedNetworkScorer(binder, scorer, callingUid),
@@ -7581,6 +7841,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         if (mVerboseLoggingEnabled) {
             mLog.info("clearWifiConnectedNetworkScorer uid=%").c(Binder.getCallingUid()).flush();
         }
+        mWifiThreadRunner.post(() -> unbindScorerService(SCORER_BINDING_STATE_CLEARED));
         // Post operation to handler thread
         mWifiThreadRunner.post(() -> mActiveModeWarden.clearWifiConnectedNetworkScorer(),
                 TAG + "#clearWifiConnectedNetworkScorer");
@@ -8958,7 +9219,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                                 isDeviceOwner);
                 listener.onResult(roamingPolicies);
             } catch (RemoteException e) {
-                Log.e(TAG, e.getMessage());
+                Log.e(TAG, e.getMessage(), e);
             }
         }, TAG + "#getPerSsidRoamingModes");
     }
@@ -9209,6 +9470,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                 () -> mActiveModeWarden.getPrimaryClientModeManager().blockNetwork(option),
                 "disallowCurrentSuggestedNetwork");
     }
+
     /**
      * See {@link WifiManager#isUsdSubscriberSupported()}
      */
@@ -9221,8 +9483,10 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         if (!mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(uid)) {
             throw new SecurityException("App not allowed to use USD (uid = " + uid + ")");
         }
-        // USDSubscriber is not supported.
-        return false;
+        if (!mIsUsdSupported) {
+            return false;
+        }
+        return mWifiNative.isUsdSubscriberSupported();
     }
 
     /**
@@ -9237,8 +9501,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         if (!mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(uid)) {
             throw new SecurityException("App not allowed to use USD (uid = " + uid + ")");
         }
-        // USDPublisher is not supported.
-        return false;
+        if (!mIsUsdSupported) {
+            return false;
+        }
+        return mWifiNative.isUsdPublisherSupported();
     }
-
 }

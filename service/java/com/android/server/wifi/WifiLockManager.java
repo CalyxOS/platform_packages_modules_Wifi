@@ -60,6 +60,8 @@ public class WifiLockManager {
 
     private static final int IGNORE_SCREEN_STATE_MASK = 0x01;
     private static final int IGNORE_WIFI_STATE_MASK   = 0x02;
+    @VisibleForTesting
+    public static final long DELAY_LOCK_RELEASE_MS = 1000;
 
     private int mLatencyModeSupport = LOW_LATENCY_SUPPORT_UNDEFINED;
 
@@ -104,6 +106,7 @@ public class WifiLockManager {
         WIFI_CONNECTION_STATE_CHANGED,
         SCREEN_STATE_CHANGED,
     };
+    private final Object mLock = new Object();
 
     WifiLockManager(
             Context context,
@@ -646,7 +649,7 @@ public class WifiLockManager {
 
         // Recalculate the operating mode
         updateOpMode();
-
+        mHandler.removeCallbacksAndMessages(mLock);
         return true;
     }
 
@@ -675,7 +678,7 @@ public class WifiLockManager {
 
         switch(wifiLock.mMode) {
             case WifiManager.WIFI_MODE_FULL_HIGH_PERF:
-                mWifiMetrics.addWifiLockAcqSession(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                mWifiMetrics.addWifiLockManagerAcqSession(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
                         uidsAndTags.first,
                         uidsAndTags.second,
                         mWifiPermissionsUtil.getWifiCallerType(wifiLock.getUid(),
@@ -693,7 +696,7 @@ public class WifiLockManager {
                 }
                 break;
             case WifiManager.WIFI_MODE_FULL_LOW_LATENCY:
-                mWifiMetrics.addWifiLockAcqSession(WifiManager.WIFI_MODE_FULL_LOW_LATENCY,
+                mWifiMetrics.addWifiLockManagerAcqSession(WifiManager.WIFI_MODE_FULL_LOW_LATENCY,
                         uidsAndTags.first,
                         uidsAndTags.second,
                         mWifiPermissionsUtil.getWifiCallerType(wifiLock.getUid(),
@@ -709,10 +712,8 @@ public class WifiLockManager {
                 // Do nothing
                 break;
         }
-
-        // Recalculate the operating mode
-        updateOpMode();
-
+        // Delay 1s to release the lock to avoid stress the HAL.
+        mHandler.postDelayed(this::updateOpMode, mLock, DELAY_LOCK_RELEASE_MS);
         return true;
     }
 
@@ -731,7 +732,7 @@ public class WifiLockManager {
                     return false;
                 }
                 uidsAndTags = WorkSourceUtil.getUidsAndTagsForWs(mHighPerfBlamedWorkSource);
-                mWifiMetrics.addWifiLockActiveSession(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                mWifiMetrics.addWifiLockManagerActiveSession(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
                         uidsAndTags.first,
                         uidsAndTags.second,
                         mClock.getElapsedSinceBootMillis() - mCurrentSessionStartTimeMs,
@@ -747,7 +748,7 @@ public class WifiLockManager {
                     return false;
                 }
                 uidsAndTags = WorkSourceUtil.getUidsAndTagsForWs(mLowLatencyBlamedWorkSource);
-                mWifiMetrics.addWifiLockActiveSession(WifiManager.WIFI_MODE_FULL_LOW_LATENCY,
+                mWifiMetrics.addWifiLockManagerActiveSession(WifiManager.WIFI_MODE_FULL_LOW_LATENCY,
                         uidsAndTags.first,
                         uidsAndTags.second,
                         mClock.getElapsedSinceBootMillis() - mCurrentSessionStartTimeMs,
@@ -851,7 +852,7 @@ public class WifiLockManager {
         }
 
         BitSet supportedFeatures =
-                mActiveModeWarden.getPrimaryClientModeManager().getSupportedFeatures();
+                mActiveModeWarden.getPrimaryClientModeManager().getSupportedFeaturesBitSet();
         if (supportedFeatures.isEmpty()) {
             return LOW_LATENCY_SUPPORT_UNDEFINED;
         }

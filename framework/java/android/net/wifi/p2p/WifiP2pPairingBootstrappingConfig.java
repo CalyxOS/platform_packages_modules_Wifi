@@ -23,6 +23,7 @@ import android.annotation.Nullable;
 import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.text.TextUtils;
 
 import androidx.annotation.RequiresApi;
 
@@ -32,7 +33,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
 /**
- * A class representing Wi-Fi Direct pairing bootstrapping config
+ * A class representing Wi-Fi Direct pairing bootstrapping configuration.
  *
  * @see android.net.wifi.p2p.WifiP2pConfig
  */
@@ -92,19 +93,80 @@ public final class WifiP2pPairingBootstrappingConfig implements Parcelable {
     private int mPairingBootstrappingMethod;
 
     /**
-     * Password for pairing setup, if |pairingBootstrappingMethod| uses one of the
-     * |PAIRING_BOOTSTRAPPING_METHOD_*| methods other than
-     * PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC, null otherwise.
+     * Password for pairing setup, if {@code mPairingBootstrappingMethod} uses
+     * {@link #PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PINCODE},
+     * {@link #PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PASSPHRASE} or
+     * {@link #PAIRING_BOOTSTRAPPING_METHOD_OUT_OF_BAND}.
+     * Must be set to null for {@link #PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC},
+     * {@link #PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE}
+     * or {@link #PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE}.
      */
     @Nullable private String mPassword;
 
+    private static boolean isValidPairingBootstrappingMethod(@WifiP2pPairingBootstrappingConfig
+            .PairingBootstrappingMethod int method) {
+        switch (method) {
+            case PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC:
+            case PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PINCODE:
+            case PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PASSPHRASE:
+            case PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE:
+            case PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE:
+            case PAIRING_BOOTSTRAPPING_METHOD_OUT_OF_BAND:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /** @hide */
+    public int getPairingBootstrappingMethod() {
+        return mPairingBootstrappingMethod;
+    }
+
+    /** @hide */
+    public String getPairingBootstrappingPassword() {
+        return mPassword;
+    }
+
+    /** @hide */
+    public void setPairingBootstrappingPassword(@NonNull String password) {
+        mPassword = password;
+    }
+
     /**
      * Constructor for a WifiP2pPairingBootstrappingConfig.
+     * @param method One of the {@code PAIRING_BOOTSTRAPPING_METHOD_*}.
+     * @param password Password or PIN for pairing setup. if {@code method} is
+     *                 {@link #PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PINCODE}, the password must be
+     *                 a string containing 4 or more digits (0-9). For example: "1234", "56789". if
+     *                 {@code method} is {@link #PAIRING_BOOTSTRAPPING_METHOD_DISPLAY_PASSPHRASE}
+     *                 or {@link #PAIRING_BOOTSTRAPPING_METHOD_OUT_OF_BAND}, the password must be a
+     *                 UTF-8 string of minimum of 1 character.
+     *                 The password must be set to null if the
+     *                 {@code method} is {@link #PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC},
+     *                 {@link #PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE} or
+     *                 {@link #PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE}.
+     *
+     * @throws IllegalArgumentException if the input pairing bootstrapping method is not
+     * one of the {@code PAIRING_BOOTSTRAPPING_METHOD_*}.
+     * @throws IllegalArgumentException if a non-null password is set for pairing bootstrapping
+     * method {@link #PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC},
+     * {@link #PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE} or
+     * {@link #PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE}.
      */
     public WifiP2pPairingBootstrappingConfig(
             @WifiP2pPairingBootstrappingConfig.PairingBootstrappingMethod int method,
             @Nullable String password) {
+        if (!isValidPairingBootstrappingMethod(method)) {
+            throw new IllegalArgumentException("Invalid PairingBootstrappingMethod =" + method);
+        }
         mPairingBootstrappingMethod = method;
+        if (!TextUtils.isEmpty(password)
+                && (method == PAIRING_BOOTSTRAPPING_METHOD_OPPORTUNISTIC
+                || method == PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PINCODE
+                || method == PAIRING_BOOTSTRAPPING_METHOD_KEYPAD_PASSPHRASE)) {
+            throw new IllegalArgumentException("Password is not required for =" + method);
+        }
         mPassword = password;
     }
 

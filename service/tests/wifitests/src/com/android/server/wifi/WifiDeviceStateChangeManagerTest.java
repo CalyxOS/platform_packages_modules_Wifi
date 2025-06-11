@@ -52,7 +52,6 @@ import org.mockito.MockitoAnnotations;
 
 @SmallTest
 public class WifiDeviceStateChangeManagerTest extends WifiBaseTest {
-
     @Mock Context mContext;
     @Mock WifiDeviceStateChangeManager.StateChangeCallback mStateChangeCallback;
     @Mock PowerManager mPowerManager;
@@ -63,7 +62,19 @@ public class WifiDeviceStateChangeManagerTest extends WifiBaseTest {
     @Captor ArgumentCaptor<BroadcastReceiver> mBroadcastReceiverCaptor;
     private TestLooper mLooper;
     private Handler mHandler;
-    private WifiDeviceStateChangeManager mWifiDeviceStateChangeManager;
+    private WifiDeviceStateChangeManagerSpy mWifiDeviceStateChangeManager;
+    private boolean mIsAapmApiFlagEnabled = false;
+
+    class WifiDeviceStateChangeManagerSpy extends WifiDeviceStateChangeManager {
+        WifiDeviceStateChangeManagerSpy() {
+            super(mContext, mHandler, mWifiInjector);
+        }
+
+        @Override
+        public boolean isAapmApiFlagEnabled() {
+            return mIsAapmApiFlagEnabled;
+        }
+    }
 
     @Before
     public void setUp() {
@@ -74,9 +85,7 @@ public class WifiDeviceStateChangeManagerTest extends WifiBaseTest {
         when(mPowerManager.isInteractive()).thenReturn(true);
         mLooper = new TestLooper();
         mHandler = new Handler(mLooper.getLooper());
-        mWifiDeviceStateChangeManager = new WifiDeviceStateChangeManager(mContext, mHandler,
-                mWifiInjector);
-
+        mWifiDeviceStateChangeManager = new WifiDeviceStateChangeManagerSpy();
     }
 
     @Test
@@ -123,7 +132,7 @@ public class WifiDeviceStateChangeManagerTest extends WifiBaseTest {
     @Test
     public void testCallbackWhenAdvancedProtectionModeSupported() {
         assumeTrue(Environment.isSdkAtLeastB());
-        assumeTrue(android.security.Flags.aapmApi());
+        mIsAapmApiFlagEnabled = true;
         ArgumentCaptor<AdvancedProtectionManager.Callback> apmCallbackCaptor =
                 ArgumentCaptor.forClass(AdvancedProtectionManager.Callback.class);
         when(mFeatureFlags.wepDisabledInApm()).thenReturn(true);

@@ -30,7 +30,6 @@ import android.net.wifi.IWifiManager;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
-import android.os.Looper;
 
 import androidx.test.filters.SmallTest;
 
@@ -117,7 +116,7 @@ public class RssiUtilTest extends WifiBaseTest {
         when(context.getApplicationInfo()).thenReturn(applicationInfo);
         when(context.getOpPackageName()).thenReturn("TestPackage");
         WifiManager wifiManager = new WifiManager(
-                context, iWifiManager, mock(Looper.class));
+                context, iWifiManager);
 
         int level = wifiManager.getMaxSignalLevel();
         assertThat(level).isEqualTo(4);

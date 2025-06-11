@@ -16,6 +16,8 @@
 
 package com.android.server.wifi;
 
+import static com.android.server.wifi.util.GeneralUtil.bitsetToLong;
+
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -35,6 +37,8 @@ import android.net.wifi.nl80211.WifiNl80211Manager;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.WorkSource;
+
+import androidx.annotation.Keep;
 
 import com.android.server.wifi.WifiNative.RxFateReport;
 import com.android.server.wifi.WifiNative.TxFateReport;
@@ -67,20 +71,24 @@ public interface ClientMode {
 
     void enableVerboseLogging(boolean verbose);
 
+    @Keep
     void connectNetwork(NetworkUpdateResult result, ActionListenerWrapper wrapper, int callingUid,
             @NonNull String packageName, @Nullable String attributionTag);
 
     void saveNetwork(NetworkUpdateResult result, ActionListenerWrapper wrapper, int callingUid,
             @NonNull String packageName);
 
+    @Keep
     void disconnect();
 
     void reconnect(WorkSource ws);
 
     void reassociate();
 
+    @Keep
     void startConnectToNetwork(int networkId, int uid, String bssid);
 
+    @Keep
     void startRoamToNetwork(int networkId, String bssid);
 
     /** When the device mobility changes, update the RSSI polling interval accordingly */
@@ -125,6 +133,7 @@ public interface ClientMode {
      * Get current Wifi connection information
      * @return Wifi info
      */
+    @Keep
     WifiInfo getConnectionInfo();
 
     boolean syncQueryPasspointIcon(long bssid, String fileName);
@@ -133,13 +142,23 @@ public interface ClientMode {
      * Get the current Wifi network information
      * @return network
      */
+    @Keep
     Network getCurrentNetwork();
 
     DhcpResultsParcelable syncGetDhcpResultsParcelable();
 
     /** Get the supported feature set synchronously */
     @NonNull
-    BitSet getSupportedFeatures();
+    BitSet getSupportedFeaturesBitSet();
+
+    /**
+     * Do not use this method, new features will not be supported by this method. This method is
+     * only for backward compatible for some OEMs. Please use {@link #getSupportedFeaturesBitSet()}
+     */
+    @Keep
+    default long getSupportedFeatures() {
+        return bitsetToLong(getSupportedFeaturesBitSet());
+    }
 
     boolean syncStartSubscriptionProvisioning(int callingUid, OsuProvider provider,
             IProvisioningCallback callback);
@@ -190,6 +209,7 @@ public interface ClientMode {
      */
     @Nullable String getConnectingBssid();
 
+    @Keep
     WifiLinkLayerStats getWifiLinkLayerStats();
 
     boolean setPowerSave(@PowerSaveClientType int client, boolean ps);
@@ -199,12 +219,14 @@ public interface ClientMode {
 
     WifiMulticastLockManager.FilterController getMcastLockManagerFilterController();
 
+    @Keep
     boolean isConnected();
 
     boolean isConnecting();
 
     boolean isRoaming();
 
+    @Keep
     boolean isDisconnected();
 
     boolean isSupplicantTransientState();

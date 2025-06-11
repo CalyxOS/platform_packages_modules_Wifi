@@ -33,7 +33,13 @@ public class JsonDeserializer {
     private static final String NETWORK_NAME = "network_name";
     private static final String PASSPHRASE = "passphrase";
 
-    /** Converts Python dict to android.net.wifi.p2p.WifiP2pConfig. */
+    /**
+     * Converts Python dict to {@link WifiP2pConfig}.
+     *
+     * @param jsonObject Python dict representing {@link WifiP2pConfig}.
+     * @return {@link WifiP2pConfig}.
+     * @throws JSONException if the JSON object is malformed.
+     */
     public static WifiP2pConfig jsonToWifiP2pConfig(JSONObject jsonObject) throws JSONException {
         if (jsonObject.has("wps_setup")) {
             // Create WifiP2pConfig directly.
@@ -55,7 +61,8 @@ public class JsonDeserializer {
         }
         if (jsonObject.has(GROUP_CLIENT_IP_PROVISIONING_MODE)) {
             builder.setGroupClientIpProvisioningMode(
-                    jsonObject.getInt(GROUP_CLIENT_IP_PROVISIONING_MODE));
+                    jsonObject.getInt(GROUP_CLIENT_IP_PROVISIONING_MODE)
+            );
         }
         if (jsonObject.has(GROUP_OPERATING_BAND)) {
             builder.setGroupOperatingBand(jsonObject.getInt(GROUP_OPERATING_BAND));
@@ -71,4 +78,5 @@ public class JsonDeserializer {
         }
         return builder.build();
     }
+
 }

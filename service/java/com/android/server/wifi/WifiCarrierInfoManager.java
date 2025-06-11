@@ -66,6 +66,7 @@ import android.util.Pair;
 import android.util.SparseArray;
 import android.util.SparseBooleanArray;
 
+import androidx.annotation.Keep;
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.GuardedBy;
@@ -883,6 +884,7 @@ public class WifiCarrierInfoManager {
      * @param subId The subscription ID of SIM card.
      * @return true if the IMSI encryption is required, otherwise false.
      */
+    @Keep
     public boolean requiresImsiEncryption(int subId) {
         PersistableBundle bundle = getCarrierConfigForSubId(subId);
         if (bundle == null) {
@@ -899,6 +901,7 @@ public class WifiCarrierInfoManager {
      * @param subId The subscription ID of SIM card.
      * @return true if the IMSI encryption is available, otherwise false.
      */
+    @Keep
     public boolean isImsiEncryptionInfoAvailable(int subId) {
         return mImsiEncryptionInfoAvailable.get(subId);
     }
@@ -909,6 +912,7 @@ public class WifiCarrierInfoManager {
      * @param config the instance of {@link WifiConfiguration}
      * @return the best match SubscriptionId
      */
+    @Keep
     public int getBestMatchSubscriptionId(@NonNull WifiConfiguration config) {
         if (config == null) {
             Log.wtf(TAG, "getBestMatchSubscriptionId: Config must be NonNull!");
@@ -979,6 +983,7 @@ public class WifiCarrierInfoManager {
      * @param subId subscription ID of SIM card in the device.
      * @return true if the SIM is active and all info are available, otherwise false.
      */
+    @Keep
     public boolean isSimReady(int subId) {
         if (!SubscriptionManager.isValidSubscriptionId(subId)) {
             return false;

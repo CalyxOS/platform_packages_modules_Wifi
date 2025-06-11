@@ -30,6 +30,8 @@ import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.Log;
 
+import androidx.annotation.Keep;
+
 import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.p2p.WifiP2pMetrics;
@@ -514,7 +516,7 @@ public class WifiCountryCode {
     }
 
     private boolean shouldDisconnectWifiToForceUpdate() {
-        if (!hasCalling() || mWifiCarrierInfoManager.isWifiCallingAvailable()) {
+        if (hasCalling() && mWifiCarrierInfoManager.isWifiCallingAvailable()) {
             return false;
         }
 
@@ -564,6 +566,7 @@ public class WifiCountryCode {
      * @return The current Wifi Country Code resolved from various sources. Returns null when there
      * is no Country Code available.
      */
+    @Keep
     @Nullable
     public synchronized String getCountryCode() {
         initializeTelephonyCountryCodeIfNeeded();
@@ -760,7 +763,7 @@ public class WifiCountryCode {
     /**
      * Method to check if current driver Country Code is in the world mode
      */
-    private boolean isDriverCountryCodeWorldMode() {
+    public boolean isDriverCountryCodeWorldMode() {
         if (mDriverCountryCode == null) {
             return true;
         }

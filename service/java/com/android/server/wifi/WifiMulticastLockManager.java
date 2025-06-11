@@ -29,6 +29,7 @@ import android.os.WorkSource;
 import android.util.Log;
 
 import com.android.server.wifi.proto.WifiStatsLog;
+import com.android.server.wifi.util.WifiPermissionsUtil;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -49,11 +50,16 @@ public class WifiMulticastLockManager {
     private final Map<Integer, Integer> mNumLocksPerInactiveOwner = new HashMap<>();
     private int mMulticastEnabled = 0;
     private int mMulticastDisabled = 0;
+    private boolean mIsFilterDisableSessionActive = false;
+    private long mFilterDisableSessionStartTime;
     private final Handler mHandler;
     private final Object mLock = new Object();
     private boolean mVerboseLoggingEnabled = false;
     private final BatteryStatsManager mBatteryStats;
     private final ActiveModeWarden mActiveModeWarden;
+    private final Clock mClock;
+    private final WifiMetrics mWifiMetrics;
+    private final WifiPermissionsUtil mWifiPermissionsUtil;
 
     /** Delegate for handling state change events for multicast filtering. */
     public interface FilterController {
@@ -68,10 +74,16 @@ public class WifiMulticastLockManager {
             ActiveModeWarden activeModeWarden,
             BatteryStatsManager batteryStats,
             Looper looper,
-            Context context) {
+            Context context,
+            Clock clock,
+            WifiMetrics wifiMetrics,
+            WifiPermissionsUtil wifiPermissionsUtil) {
         mBatteryStats = batteryStats;
         mActiveModeWarden = activeModeWarden;
         mHandler = new Handler(looper);
+        mClock = clock;
+        mWifiMetrics = wifiMetrics;
+        mWifiPermissionsUtil = wifiPermissionsUtil;
 
         mActiveModeWarden.registerPrimaryClientModeManagerChangedCallback(
                 new PrimaryClientModeManagerChangedCallback());
@@ -89,11 +101,18 @@ public class WifiMulticastLockManager {
         String mTag;
         int mUid;
         IBinder mBinder;
+        String mAttributionTag;
+        String mPackageName;
+        long mAcquireTime;
 
-        Multicaster(int uid, IBinder binder, String tag) {
+        Multicaster(int uid, IBinder binder, String tag, String attributionTag,
+                String packageName) {
             mTag = tag;
             mUid = uid;
             mBinder = binder;
+            mAttributionTag = attributionTag;
+            mPackageName = packageName;
+            mAcquireTime = mClock.getElapsedSinceBootMillis();
             try {
                 mBinder.linkToDeath(this, 0);
             } catch (RemoteException e) {
@@ -128,6 +147,18 @@ public class WifiMulticastLockManager {
 
         public IBinder getBinder() {
             return mBinder;
+        }
+
+        public String getAttributionTag() {
+            return mAttributionTag;
+        }
+
+        public String getPackageName() {
+            return mPackageName;
+        }
+
+        public long getAcquireTime() {
+            return mAcquireTime;
         }
 
         public String toString() {
@@ -206,25 +237,44 @@ public class WifiMulticastLockManager {
     public void startFilteringMulticastPackets() {
         synchronized (mLock) {
             if (!isMulticastEnabled()) {
+                if (mIsFilterDisableSessionActive) {
+                    // Log the end of the filtering disabled session,
+                    // since we're about to re-enable multicast packet filtering
+                    mWifiMetrics.addMulticastLockManagerActiveSession(
+                            mClock.getElapsedSinceBootMillis() - mFilterDisableSessionStartTime);
+                }
                 mActiveModeWarden.getPrimaryClientModeManager()
                         .getMcastLockManagerFilterController()
                         .startFilteringMulticastPackets();
+                mIsFilterDisableSessionActive = false;
             }
         }
     }
 
     private void stopFilteringMulticastPackets() {
-        mActiveModeWarden.getPrimaryClientModeManager()
-                .getMcastLockManagerFilterController()
-                .stopFilteringMulticastPackets();
+        synchronized (mLock) {
+            if (!mIsFilterDisableSessionActive) {
+                // Mark the beginning of a filtering disabled session,
+                // since we're about to disable multicast packet filtering
+                mFilterDisableSessionStartTime = mClock.getElapsedSinceBootMillis();
+            }
+            mActiveModeWarden.getPrimaryClientModeManager()
+                    .getMcastLockManagerFilterController()
+                    .stopFilteringMulticastPackets();
+            mIsFilterDisableSessionActive = true;
+        }
     }
 
     /**
      * Acquire a multicast lock.
+     * @param uid uid of the calling application
      * @param binder a binder used to ensure caller is still alive
-     * @param tag string name of the caller.
+     * @param lockTag caller-provided tag to identify this lock
+     * @param attributionTag attribution tag of the calling application
+     * @param packageName package name of the calling application
      */
-    public void acquireLock(int uid, IBinder binder, String tag) {
+    public void acquireLock(int uid, IBinder binder, String lockTag, String attributionTag,
+            String packageName) {
         synchronized (mLock) {
             mMulticastEnabled++;
 
@@ -234,35 +284,33 @@ public class WifiMulticastLockManager {
             }
             int numLocksHeldByUid = mNumLocksPerActiveOwner.getOrDefault(uid, 0);
             mNumLocksPerActiveOwner.put(uid, numLocksHeldByUid + 1);
-            mMulticasters.add(new Multicaster(uid, binder, tag));
+            mMulticasters.add(new Multicaster(uid, binder, lockTag, attributionTag, packageName));
 
             // Note that we could call stopFilteringMulticastPackets only when
             // our new size == 1 (first call), but this function won't
             // be called often and by making the stopPacket call each
             // time we're less fragile and self-healing.
-            mActiveModeWarden.getPrimaryClientModeManager()
-                    .getMcastLockManagerFilterController()
-                    .stopFilteringMulticastPackets();
+            stopFilteringMulticastPackets();
         }
 
         final long ident = Binder.clearCallingIdentity();
         mBatteryStats.reportWifiMulticastEnabled(new WorkSource(uid));
         WifiStatsLog.write_non_chained(
                 WifiStatsLog.WIFI_MULTICAST_LOCK_STATE_CHANGED, uid, null,
-                WifiStatsLog.WIFI_MULTICAST_LOCK_STATE_CHANGED__STATE__ON, tag);
+                WifiStatsLog.WIFI_MULTICAST_LOCK_STATE_CHANGED__STATE__ON, lockTag);
         Binder.restoreCallingIdentity(ident);
     }
 
     /** Releases a multicast lock */
-    public void releaseLock(int uid, IBinder binder, String tag) {
+    public void releaseLock(int uid, IBinder binder, String lockTag) {
         synchronized (mLock) {
             mMulticastDisabled++;
             int size = mMulticasters.size();
             for (int i = size - 1; i >= 0; i--) {
                 Multicaster m = mMulticasters.get(i);
-                if ((m != null) && (m.getUid() == uid) && (m.getTag().equals(tag))
+                if ((m != null) && (m.getUid() == uid) && (m.getTag().equals(lockTag))
                         && (m.getBinder() == binder)) {
-                    removeMulticasterLocked(i, uid, tag);
+                    removeMulticasterLocked(i, uid, lockTag);
                     break;
                 }
             }
@@ -282,6 +330,10 @@ public class WifiMulticastLockManager {
         Multicaster removed = mMulticasters.remove(i);
         if (removed != null) {
             removed.unlinkDeathRecipient();
+            mWifiMetrics.addMulticastLockManagerAcqSession(
+                    uid, removed.getAttributionTag(),
+                    mWifiPermissionsUtil.getWifiCallerType(uid, removed.getPackageName()),
+                    mClock.getElapsedSinceBootMillis() - removed.getAcquireTime());
         }
 
         if (mNumLocksPerActiveOwner.containsKey(uid)) {
@@ -291,9 +343,7 @@ public class WifiMulticastLockManager {
         }
 
         if (!isMulticastEnabled()) {
-            mActiveModeWarden.getPrimaryClientModeManager()
-                    .getMcastLockManagerFilterController()
-                    .startFilteringMulticastPackets();
+            startFilteringMulticastPackets();
         }
 
         final long ident = Binder.clearCallingIdentity();

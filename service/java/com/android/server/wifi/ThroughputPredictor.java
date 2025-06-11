@@ -150,7 +150,7 @@ public class ThroughputPredictor {
     public int predictTxThroughput(@NonNull WifiNative.ConnectionCapabilities capabilities,
             int rssiDbm, int frequency, int channelUtilization) {
         int channelUtilizationFinal = getValidChannelUtilization(frequency,
-                INVALID, channelUtilization, false);
+                channelUtilization, false);
         return predictThroughputInternal(capabilities.wifiStandard, capabilities.is11bMode,
                 capabilities.channelBandwidth, rssiDbm, capabilities.maxNumberTxSpatialStreams,
                 channelUtilizationFinal, frequency, null);
@@ -163,7 +163,7 @@ public class ThroughputPredictor {
     public int predictRxThroughput(@NonNull WifiNative.ConnectionCapabilities capabilities,
             int rssiDbm, int frequency, int channelUtilization) {
         int channelUtilizationFinal = getValidChannelUtilization(frequency,
-                INVALID, channelUtilization, false);
+                channelUtilization, false);
         return predictThroughputInternal(capabilities.wifiStandard, capabilities.is11bMode,
                 capabilities.channelBandwidth, rssiDbm, capabilities.maxNumberRxSpatialStreams,
                 channelUtilizationFinal, frequency, null);
@@ -277,7 +277,6 @@ public class ThroughputPredictor {
         }
 
         int channelUtilization = getValidChannelUtilization(frequency,
-                channelUtilizationBssLoad,
                 channelUtilizationLinkLayerStats,
                 isBluetoothConnected);
 
@@ -417,7 +416,7 @@ public class ThroughputPredictor {
         int phyRateMbps =  (int) ((numBitPerSym * MICRO_TO_NANO_RATIO)
                 / (symDurationNs * BIT_PER_TONE_SCALE));
 
-        int airTimeFraction = calculateAirTimeFraction(channelUtilization, channelWidthFactor);
+        int airTimeFraction = calculateAirTimeFraction(channelUtilization);
 
         int throughputMbps = (phyRateMbps * airTimeFraction) / MAX_CHANNEL_UTILIZATION;
 
@@ -458,13 +457,11 @@ public class ThroughputPredictor {
         return bitPerTone;
     }
 
-    private int getValidChannelUtilization(int frequency, int channelUtilizationBssLoad,
+    private int getValidChannelUtilization(int frequency,
             int channelUtilizationLinkLayerStats, boolean isBluetoothConnected) {
         int channelUtilization;
         boolean is2G = ScanResult.is24GHz(frequency);
-        if (isValidUtilizationRatio(channelUtilizationBssLoad)) {
-            channelUtilization = channelUtilizationBssLoad;
-        } else if (isValidUtilizationRatio(channelUtilizationLinkLayerStats)) {
+        if (isValidUtilizationRatio(channelUtilizationLinkLayerStats)) {
             channelUtilization = channelUtilizationLinkLayerStats;
         } else {
             channelUtilization = is2G ? CHANNEL_UTILIZATION_DEFAULT_2G :
@@ -477,8 +474,8 @@ public class ThroughputPredictor {
         }
         if (mVerboseLoggingEnabled) {
             StringBuilder sb = new StringBuilder();
-            Log.d(TAG, sb.append(" utilization (BssLoad) ").append(channelUtilizationBssLoad)
-                    .append(" utilization (LLStats) ").append(channelUtilizationLinkLayerStats)
+            Log.d(TAG, sb
+                    .append(" utilization (LLS) ").append(channelUtilizationLinkLayerStats)
                     .append(" isBluetoothConnected: ").append(isBluetoothConnected)
                     .append(" final utilization: ").append(channelUtilization)
                     .toString());
@@ -497,19 +494,7 @@ public class ThroughputPredictor {
     // Calculate the available airtime fraction value which is multiplied by
     // MAX_CHANNEL_UTILIZATION for integer representation. It is calculated as
     // (1 - channelUtilization / MAX_CHANNEL_UTILIZATION) * MAX_CHANNEL_UTILIZATION
-    private int calculateAirTimeFraction(int channelUtilization, int channelWidthFactor) {
-        int airTimeFraction20MHz = MAX_CHANNEL_UTILIZATION - channelUtilization;
-        int airTimeFraction = airTimeFraction20MHz;
-        // For the cases of 40MHz or above, need to take
-        // (1 - channelUtilization / MAX_CHANNEL_UTILIZATION) ^ (2 ^ channelWidthFactor)
-        // because channelUtilization is defined for primary 20MHz channel
-        for (int i = 1; i <= channelWidthFactor; ++i) {
-            airTimeFraction *= airTimeFraction;
-            airTimeFraction /= MAX_CHANNEL_UTILIZATION;
-        }
-        if (mVerboseLoggingEnabled) {
-            Log.d(TAG, " airTime20: " + airTimeFraction20MHz + " airTime: " + airTimeFraction);
-        }
-        return airTimeFraction;
+    private int calculateAirTimeFraction(int channelUtilization) {
+        return MAX_CHANNEL_UTILIZATION - channelUtilization;
     }
 }

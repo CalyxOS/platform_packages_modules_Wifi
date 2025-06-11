@@ -33,6 +33,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
+import android.net.wifi.ScanResult;
 import android.net.wifi.WifiInfo;
 import android.os.Handler;
 import android.os.test.TestLooper;
@@ -655,16 +656,17 @@ public class WifiDataStallTest extends WifiBaseTest {
         mNewLlStats.timeStampInMs = mOldLlStats.timeStampInMs + 1000;
         // Expect 1st throughput sufficiency check to return true
         // because it hits mLastTxBytes == 0 || mLastRxBytes == 0
+        mCapabilities.channelBandwidth = ScanResult.CHANNEL_WIDTH_80MHZ;
         mWifiDataStall.checkDataStallAndThroughputSufficiency(TEST_IFACE_NAME,
                 mCapabilities, mOldLlStats, mNewLlStats, mWifiInfo, mTxBytes, mRxBytes);
         verify(mWifiMetrics, times(1)).incrementConnectionDuration(TEST_IFACE_NAME,
-                1000, true, true, TEST_RSSI, 960, 9609);
+                1000, true, true, TEST_RSSI, 960, 9609, 10, 10, ScanResult.CHANNEL_WIDTH_80MHZ);
 
         // Expect 2nd throughput sufficiency check to return false
         mWifiDataStall.checkDataStallAndThroughputSufficiency(TEST_IFACE_NAME,
                 mCapabilities, mOldLlStats, mNewLlStats, mWifiInfo, mTxBytes, mRxBytes);
         verify(mWifiMetrics, times(1)).incrementConnectionDuration(TEST_IFACE_NAME,
-                1000, false, true, TEST_RSSI, 960, 9609);
+                1000, false, true, TEST_RSSI, 960, 9609, 10, 10, ScanResult.CHANNEL_WIDTH_80MHZ);
 
         mNewLlStats.timeStampInMs = mOldLlStats.timeStampInMs + 2000;
         phoneStateListener.onDataConnectionStateChanged(
@@ -673,7 +675,7 @@ public class WifiDataStallTest extends WifiBaseTest {
         mWifiDataStall.checkDataStallAndThroughputSufficiency(TEST_IFACE_NAME,
                 mCapabilities, mOldLlStats, mNewLlStats, mWifiInfo, mTxBytes, mRxBytes);
         verify(mWifiMetrics, times(1)).incrementConnectionDuration(TEST_IFACE_NAME,
-                2000, false, false, TEST_RSSI, 960, 9609);
+                2000, false, false, TEST_RSSI, 960, 9609, 10, 10, ScanResult.CHANNEL_WIDTH_80MHZ);
 
         // Expect this update to be ignored by connection duration counters due to its
         // too large poll interval
@@ -681,7 +683,7 @@ public class WifiDataStallTest extends WifiBaseTest {
         mWifiDataStall.checkDataStallAndThroughputSufficiency(TEST_IFACE_NAME,
                 mCapabilities, mOldLlStats, mNewLlStats, mWifiInfo, mTxBytes, mRxBytes);
         verify(mWifiMetrics, never()).incrementConnectionDuration(TEST_IFACE_NAME,
-                10000, false, false, TEST_RSSI, 960, 9609);
+                10000, false, false, TEST_RSSI, 960, 9609, 10, 10, ScanResult.CHANNEL_WIDTH_80MHZ);
         setWifiEnabled(false);
     }
 }

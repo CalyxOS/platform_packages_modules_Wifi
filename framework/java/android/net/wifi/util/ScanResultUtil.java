@@ -26,6 +26,8 @@ import android.net.wifi.SecurityParams;
 import android.net.wifi.WifiConfiguration;
 import android.util.Log;
 
+import androidx.annotation.Keep;
+
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.io.PrintWriter;
@@ -314,6 +316,7 @@ public class ScanResultUtil {
     /**
      * Creates a network configuration object using the provided |scanResult|.
      */
+    @Keep
     public static @Nullable WifiConfiguration createNetworkFromScanResult(
             @NonNull ScanResult scanResult) {
         WifiConfiguration config = new WifiConfiguration();

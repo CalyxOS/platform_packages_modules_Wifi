@@ -88,7 +88,6 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 
 import android.annotation.NonNull;
@@ -316,7 +315,8 @@ public class WifiManagerTest {
         mApplicationInfo.targetSdkVersion = Build.VERSION_CODES.Q;
         when(mContext.getApplicationInfo()).thenReturn(mApplicationInfo);
         when(mContext.getOpPackageName()).thenReturn(TEST_PACKAGE_NAME);
-        mWifiManager = new WifiManager(mContext, mWifiService, mLooper.getLooper());
+        when(mContext.getMainLooper()).thenReturn(mLooper.getLooper());
+        mWifiManager = new WifiManager(mContext, mWifiService);
         verify(mWifiService).getVerboseLoggingLevel();
         mWifiNetworkSuggestion = new WifiNetworkSuggestion();
         mScanResultsCallback = new ScanResultsCallback() {
@@ -2055,7 +2055,7 @@ public class WifiManagerTest {
     @Test
     public void testUnregisterWifiServiceImplNotCalledWithoutRegisteredObserver() throws Exception {
         mWifiManager.unregisterLocalOnlyHotspotObserver();
-        verifyZeroInteractions(mWifiService);
+        verifyNoMoreInteractions(mWifiService);
     }
 
     /**

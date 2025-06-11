@@ -397,22 +397,22 @@ public class WifiP2pConfig implements Parcelable {
     /**
      * Used to authorize a connection request from the peer device.
      */
-    private boolean mAuthorizeConnectionFromPeer = false;
+    private boolean mIsAuthorizeConnectionFromPeerEnabled = false;
 
     /**
      * Query to check if the configuration is for authorizing a connection request
-     * from the peer device. @see {@link Builder#setAuthorizeConnectionFromPeer(boolean)}
+     * from the peer device. @see {@link Builder#setAuthorizeConnectionFromPeerEnabled(boolean)}
      *
      * @return true if configured to authorize a connection request from the Peer device,
      * False otherwise.
      */
     @RequiresApi(Build.VERSION_CODES.BAKLAVA)
     @FlaggedApi(Flags.FLAG_WIFI_DIRECT_R2)
-    public boolean isAuthorizeConnectionFromPeer() {
+    public boolean isAuthorizeConnectionFromPeerEnabled() {
         if (!Environment.isSdkAtLeastB()) {
             throw new UnsupportedOperationException();
         }
-        return mAuthorizeConnectionFromPeer;
+        return mIsAuthorizeConnectionFromPeerEnabled;
     }
 
     public WifiP2pConfig() {
@@ -498,7 +498,8 @@ public class WifiP2pConfig implements Parcelable {
                     .append((mPairingBootstrappingConfig == null)
                             ? "<null>" : mPairingBootstrappingConfig.toString());
         }
-        sbuf.append("\n authorizeConnectionFromPeer: ").append(mAuthorizeConnectionFromPeer);
+        sbuf.append("\n authorizeConnectionFromPeerEnabled: ")
+                .append(mIsAuthorizeConnectionFromPeerEnabled);
         return sbuf.toString();
     }
 
@@ -523,7 +524,7 @@ public class WifiP2pConfig implements Parcelable {
             mVendorData = new ArrayList<>(source.mVendorData);
             mGroupOwnerVersion = source.mGroupOwnerVersion;
             mPairingBootstrappingConfig = source.mPairingBootstrappingConfig;
-            mAuthorizeConnectionFromPeer = source.mAuthorizeConnectionFromPeer;
+            mIsAuthorizeConnectionFromPeerEnabled = source.mIsAuthorizeConnectionFromPeerEnabled;
         }
     }
 
@@ -544,7 +545,7 @@ public class WifiP2pConfig implements Parcelable {
         if (Environment.isSdkAtLeastB() && Flags.wifiDirectR2()) {
             dest.writeParcelable(mPairingBootstrappingConfig, flags);
         }
-        dest.writeBoolean(mAuthorizeConnectionFromPeer);
+        dest.writeBoolean(mIsAuthorizeConnectionFromPeerEnabled);
     }
 
     /** Implement the Parcelable interface */
@@ -569,7 +570,7 @@ public class WifiP2pConfig implements Parcelable {
                         config.mPairingBootstrappingConfig = in.readParcelable(
                                 WifiP2pPairingBootstrappingConfig.class.getClassLoader());
                     }
-                    config.mAuthorizeConnectionFromPeer = in.readBoolean();
+                    config.mIsAuthorizeConnectionFromPeerEnabled = in.readBoolean();
                     return config;
             }
 
@@ -610,7 +611,7 @@ public class WifiP2pConfig implements Parcelable {
         @PccModeConnectionType
         private int mPccModeConnectionType = PCC_MODE_DEFAULT_CONNECTION_TYPE_LEGACY_ONLY;
         private @Nullable WifiP2pPairingBootstrappingConfig mPairingBootstrappingConfig;
-        private boolean mAuthorizeConnectionFromPeer = false;
+        private boolean mIsAuthorizeConnectionFromPeerEnabled = false;
 
         /**
          * Specify the peer's MAC address. If not set, the device will
@@ -954,15 +955,15 @@ public class WifiP2pConfig implements Parcelable {
          * WifiP2pManager.ActionListener)}. The device will then wait for the connection request
          * from the peer device.
          *
-         * @param authorize true to authorize a connection request from the peer device, false to
+         * @param enabled true to authorize a connection request from the peer device, false to
          *                  let the device join a group or form a group.
          * @return The builder to facilitate chaining {@code builder.setXXX(..).setXXX(..)}.
          */
         @RequiresApi(Build.VERSION_CODES.BAKLAVA)
         @FlaggedApi(Flags.FLAG_WIFI_DIRECT_R2)
         @NonNull
-        public Builder setAuthorizeConnectionFromPeer(boolean authorize) {
-            mAuthorizeConnectionFromPeer = authorize;
+        public Builder setAuthorizeConnectionFromPeerEnabled(boolean enabled) {
+            mIsAuthorizeConnectionFromPeerEnabled = enabled;
             return this;
         }
 
@@ -1016,8 +1017,13 @@ public class WifiP2pConfig implements Parcelable {
             config.netId = mNetId;
             config.mGroupClientIpProvisioningMode = mGroupClientIpProvisioningMode;
             config.mJoinExistingGroup = mJoinExistingGroup;
-            config.mPairingBootstrappingConfig = mPairingBootstrappingConfig;
-            config.mAuthorizeConnectionFromPeer = mAuthorizeConnectionFromPeer;
+            if (mPairingBootstrappingConfig != null) {
+                config.mPairingBootstrappingConfig = mPairingBootstrappingConfig;
+                config.mGroupClientIpProvisioningMode =
+                        GROUP_CLIENT_IP_PROVISIONING_MODE_IPV6_LINK_LOCAL;
+                config.wps.setup = WpsInfo.INVALID;
+            }
+            config.mIsAuthorizeConnectionFromPeerEnabled = mIsAuthorizeConnectionFromPeerEnabled;
             return config;
         }
     }

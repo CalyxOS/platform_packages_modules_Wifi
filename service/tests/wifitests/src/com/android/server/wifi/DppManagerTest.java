@@ -59,6 +59,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeFalse;
 import static org.junit.Assume.assumeTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
@@ -623,7 +624,7 @@ public class DppManagerTest extends WifiBaseTest {
         verify(mDppMetrics).updateDppEnrolleeSuccess();
         verify(mDppMetrics).updateDppOperationTime(anyInt());
         verifyNoMoreInteractions(mDppMetrics);
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -674,7 +675,7 @@ public class DppManagerTest extends WifiBaseTest {
                 .EASY_CONNECT_EVENT_FAILURE_AUTHENTICATION));
         verify(mDppMetrics).updateDppOperationTime(anyInt());
         verifyNoMoreInteractions(mDppMetrics);
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -724,7 +725,7 @@ public class DppManagerTest extends WifiBaseTest {
                 .EASY_CONNECT_EVENT_FAILURE_AUTHENTICATION));
         verify(mDppMetrics).updateDppOperationTime(anyInt());
         verifyNoMoreInteractions(mDppMetrics);
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -807,15 +808,15 @@ public class DppManagerTest extends WifiBaseTest {
         // Check that WifiNative is called to stop the DPP session
         mDppManager.stopDppSession(10);
         verify(mWifiNative).stopDppInitiator(eq(TEST_INTERFACE_NAME));
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
-    private void verifyCleanUpResources(int authRole) {
+    private void verifyCleanUpResources(int authRole, int expectedNumOfCancelTimeOuts) {
         if (authRole == DppManager.DPP_AUTH_ROLE_INITIATOR) {
             verify(mWifiNative).removeDppUri(eq(TEST_INTERFACE_NAME), anyInt());
         }
-        verify(mWakeupMessage).cancel();
+        verify(mWakeupMessage, times(expectedNumOfCancelTimeOuts)).cancel();
     }
 
     @Test
@@ -1061,7 +1062,7 @@ public class DppManagerTest extends WifiBaseTest {
             verify(mDppMetrics, times(1)).updateDppR2EnrolleeResponderIncompatibleConfiguration();
         }
         verifyNoMoreInteractions(mDppMetrics);
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -1203,7 +1204,7 @@ public class DppManagerTest extends WifiBaseTest {
         verify(mDppMetrics).updateDppEnrolleeResponderSuccess();
         verify(mDppMetrics).updateDppOperationTime(anyInt());
         verifyNoMoreInteractions(mDppMetrics);
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -1244,7 +1245,7 @@ public class DppManagerTest extends WifiBaseTest {
                 .EASY_CONNECT_EVENT_FAILURE_AUTHENTICATION));
         verify(mDppMetrics).updateDppOperationTime(anyInt());
         verifyNoMoreInteractions(mDppMetrics);
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -1273,7 +1274,7 @@ public class DppManagerTest extends WifiBaseTest {
         verify(mWifiNative).stopDppResponder(eq(TEST_INTERFACE_NAME), eq(TEST_BOOTSTRAP_ID));
         verify(mDppMetrics).updateDppEnrolleeResponderRequests();
         verifyNoMoreInteractions(mDppMetrics);
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER);
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER, 1);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -1315,7 +1316,8 @@ public class DppManagerTest extends WifiBaseTest {
         // and check that DPP session is cleaned up & session is not in progress anymore.
         dppEventCallback.onConnectionStatusResultSent(0);
         mLooper.dispatchAll();
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER);
+        verify(mWakeupMessage, times(2)).schedule(anyLong());
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_RESPONDER, 2);
         assertFalse(mDppManager.isSessionInProgress());
     }
 
@@ -1356,7 +1358,8 @@ public class DppManagerTest extends WifiBaseTest {
         // and check that DPP session is cleaned up & session is not in progress anymore.
         dppEventCallback.onConnectionStatusResultSent(0);
         mLooper.dispatchAll();
-        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR);
+        verify(mWakeupMessage, times(2)).schedule(anyLong());
+        verifyCleanUpResources(DppManager.DPP_AUTH_ROLE_INITIATOR, 2);
         assertFalse(mDppManager.isSessionInProgress());
     }
 }

@@ -25,7 +25,9 @@ from aware import constants
 
 from mobly import asserts
 from mobly.controllers import android_device
+from mobly.controllers.android_device_lib import adb
 from mobly.controllers.android_device_lib import callback_handler_v2
+from mobly.snippet import callback_event
 from mobly.snippet import errors
 
 
@@ -34,6 +36,18 @@ _TIMEOUT_INTERVAL_IN_SEC = 1
 _WAIT_WIFI_STATE_TIME_OUT = datetime.timedelta(seconds=10)
 _WAIT_TIME_SEC = 3
 _CONTROL_WIFI_TIMEOUT_SEC = 10
+_REQUEST_NETWORK_TIMEOUT_MS = 15 * 1000
+# arbitrary timeout for events
+_EVENT_TIMEOUT = 10
+
+# Alias variable.
+_CALLBACK_NAME = constants.DiscoverySessionCallbackParamsType.CALLBACK_NAME
+_DEFAULT_TIMEOUT = constants.WAIT_WIFI_STATE_TIME_OUT.total_seconds()
+_TRANSPORT_TYPE_WIFI_AWARE = (
+    constants.NetworkCapabilities.Transport.TRANSPORT_WIFI_AWARE
+)
+# Definition for timeout and retries.
+_DEFAULT_TIMEOUT = constants.WAIT_WIFI_STATE_TIME_OUT.total_seconds()
 
 
 def callback_no_response(
@@ -332,6 +346,22 @@ def reset_device_parameters(ad: android_device.AndroidDevice):
   """
   ad.adb.shell("cmd wifiaware reset")
 
+def aware_cap_str_to_dict(cap_string:str) -> dict:
+    idx = cap_string.find('[maxConcurrentAwareClusters')
+    # Remove the braces from the string.
+    new_string = cap_string[idx:-1].strip('[]')
+    # split the string into key-value pairs
+    pairs = new_string.split(', ')
+    # Converting the values to integer or bool into dictionary
+    capabilities = {}
+    for pair in pairs:
+      key, value = pair.split('=')
+      try:
+          capabilities[key] = int(value)
+      except ValueError:
+          capabilities[key] = bool(value)
+    return capabilities
+
 
 def reset_device_statistics(ad: android_device.AndroidDevice,):
   """Reset device statistics.
@@ -349,7 +379,16 @@ def get_aware_capabilities(ad: android_device.AndroidDevice):
     ad: the Android device
   Returns: the capability dictionary.
   """
-    return json.loads(ad.adb.shell('cmd wifiaware state_mgr get_capabilities'))
+    try:
+      result = ad.adb.shell('cmd wifiaware state_mgr get_capabilities')
+      return json.loads(result)
+    except adb.AdbError:
+      ad.log.info('Another way to get capabilities- dumpsys and parse string.')
+      result = ad.adb.shell('dumpsys wifiaware |grep mCapabilities').decode()
+      pairs = aware_cap_str_to_dict(result)
+      ad.log.info(pairs)
+    return pairs
+
 
 def create_discovery_config(service_name,
                             p_type=None,
@@ -392,3 +431,355 @@ def create_discovery_config(service_name,
     config[constants.TTL_SEC] = ttl
     config[constants.TERMINATE_NOTIFICATION_ENABLED] = term_cb_enable
     return config
+
+def start_attach(
+    ad: android_device.AndroidDevice,
+    is_ranging_enabled: bool = True,
+) -> str:
+  """Starts the attach process on the provided device."""
+  attach_handler = ad.wifi_aware_snippet.wifiAwareAttached(
+      is_ranging_enabled
+  )
+  attach_event = attach_handler.waitAndGet(
+      event_name=constants.AttachCallBackMethodType.ATTACHED,
+      timeout=_DEFAULT_TIMEOUT,
+  )
+  asserts.assert_true(
+      ad.wifi_aware_snippet.wifiAwareIsSessionAttached(
+          attach_event.callback_id
+      ),
+      f'{ad} attach succeeded, but Wi-Fi Aware session is still null.',
+  )
+  mac_address = None
+  if is_ranging_enabled:
+    identity_changed_event = attach_handler.waitAndGet(
+        event_name=constants.AttachCallBackMethodType.ID_CHANGED,
+        timeout=_DEFAULT_TIMEOUT,
+    )
+    mac_address = identity_changed_event.data.get('mac', None)
+    asserts.assert_true(bool(mac_address), 'Mac address should not be empty')
+  ad.log.info('Attach Wi-Fi Aware session succeeded.')
+  return attach_event.callback_id, mac_address
+
+def create_discovery_pair(
+    p_dut: android_device.AndroidDevice,
+    s_dut: android_device.AndroidDevice,
+    p_config: dict[str, any],
+    s_config: dict[str, any],
+    device_startup_delay: int=1,
+    msg_id=None,
+):
+  """Creates a discovery session (publish and subscribe), and pair each other.
+
+  wait for service discovery - at that point the sessions are connected and
+  ready for further messaging of data-path setup.
+
+  Args:
+      p_dut: Device to use as publisher.
+      s_dut: Device to use as subscriber.
+      p_config: Publish configuration.
+      s_config: Subscribe configuration.
+      device_startup_delay: Number of seconds to offset the enabling of NAN
+        on the two devices.
+      msg_id: Controls whether a message is sent from Subscriber to Publisher
+        (so that publisher has the sub's peer ID). If None then not sent,
+        otherwise should be an int for the message id.
+
+  Returns:
+      variable size list of:
+      p_id: Publisher attach session id
+      s_id: Subscriber attach session id
+      p_disc_id: Publisher discovery session id
+      s_disc_id: Subscriber discovery session id
+      peer_id_on_sub: Peer ID of the Publisher as seen on the Subscriber
+      peer_id_on_pub: Peer ID of the Subscriber as seen on the Publisher. Only
+                      included if |msg_id| is not None.
+  """
+  # attach and wait for confirmation
+  p_id, _ = start_attach(p_dut)
+  time.sleep(device_startup_delay)
+  s_id, _ = start_attach(s_dut)
+  p_disc_id = p_dut.wifi_aware_snippet.wifiAwarePublish(
+      p_id, p_config
+      )
+  p_dut.log.info('Created the publish session.')
+  p_discovery = p_disc_id.waitAndGet(
+      constants.DiscoverySessionCallbackMethodType.DISCOVER_RESULT)
+  callback_name = p_discovery.data[_CALLBACK_NAME]
+  asserts.assert_equal(
+      constants.DiscoverySessionCallbackMethodType.PUBLISH_STARTED,
+      callback_name,
+      f'{p_dut} publish failed, got callback: {callback_name}.',
+      )
+  time.sleep(device_startup_delay)
+  # Subscriber: start subscribe and wait for confirmation
+  s_disc_id = s_dut.wifi_aware_snippet.wifiAwareSubscribe(
+      s_id, s_config
+      )
+  s_dut.log.info('Created the subscribe session.')
+  s_discovery = s_disc_id.waitAndGet(
+      constants.DiscoverySessionCallbackMethodType.DISCOVER_RESULT)
+  callback_name = s_discovery.data[_CALLBACK_NAME]
+  asserts.assert_equal(
+      constants.DiscoverySessionCallbackMethodType.SUBSCRIBE_STARTED,
+      callback_name,
+      f'{s_dut} subscribe failed, got callback: {callback_name}.',
+      )
+  # Subscriber: wait for service discovery
+  discovery_event = s_disc_id.waitAndGet(
+      constants.DiscoverySessionCallbackMethodType.SERVICE_DISCOVERED)
+  peer_id_on_sub = discovery_event.data[
+      constants.WifiAwareSnippetParams.PEER_ID
+  ]
+  # Optionally send a message from Subscriber to Publisher
+  if msg_id is not None:
+    ping_msg = 'PING'
+    # Subscriber: send message to peer (Publisher)
+    s_dut.wifi_aware_snippet.wifiAwareSendMessage(
+        s_disc_id.callback_id, peer_id_on_sub, msg_id, ping_msg
+        )
+    message_send_result = s_disc_id.waitAndGet(
+        event_name=
+        constants.DiscoverySessionCallbackMethodType.MESSAGE_SEND_RESULT,
+        timeout=_DEFAULT_TIMEOUT,
+        )
+    actual_send_message_id = message_send_result.data[
+        constants.DiscoverySessionCallbackParamsType.MESSAGE_ID
+        ]
+    asserts.assert_equal(
+        actual_send_message_id,
+        msg_id,
+        f'{s_dut} send message succeeded but message ID mismatched.'
+        )
+    pub_rx_msg_event = p_disc_id.waitAndGet(
+        event_name=
+        constants.DiscoverySessionCallbackMethodType.MESSAGE_RECEIVED,
+        timeout=_DEFAULT_TIMEOUT,
+        )
+    peer_id_on_pub = pub_rx_msg_event.data[
+        constants.WifiAwareSnippetParams.PEER_ID
+        ]
+    received_message_raw = pub_rx_msg_event.data[
+        constants.WifiAwareSnippetParams.RECEIVED_MESSAGE
+        ]
+    received_message = bytes(received_message_raw).decode('utf-8')
+    asserts.assert_equal(
+        received_message,
+        ping_msg,
+        f'{p_dut} Subscriber -> Publisher message corrupted.'
+        )
+    return p_id, s_id, p_disc_id, s_disc_id, peer_id_on_sub, peer_id_on_pub
+  return p_id, s_id, p_disc_id, s_disc_id, peer_id_on_sub
+
+def request_network(
+    ad: android_device.AndroidDevice,
+    discovery_session: str,
+    peer: int,
+    net_work_request_id: str,
+    network_specifier_params: (
+        constants.WifiAwareNetworkSpecifier | None
+    ) = None,
+    is_accept_any_peer: bool = False,
+) -> callback_handler_v2.CallbackHandlerV2:
+  """Requests and configures a Wi-Fi Aware network connection."""
+  network_specifier_parcel = (
+      ad.wifi_aware_snippet.wifiAwareCreateNetworkSpecifier(
+          discovery_session,
+          peer,
+          is_accept_any_peer,
+          network_specifier_params.to_dict()
+          if network_specifier_params
+          else None,
+      )
+  )
+  network_request_dict = constants.NetworkRequest(
+      transport_type=_TRANSPORT_TYPE_WIFI_AWARE,
+      network_specifier_parcel=network_specifier_parcel,
+  ).to_dict()
+  ad.log.debug('Requesting Wi-Fi Aware network: %r', network_request_dict)
+  return ad.wifi_aware_snippet.connectivityRequestNetwork(
+      net_work_request_id, network_request_dict, _REQUEST_NETWORK_TIMEOUT_MS
+  )
+
+def wait_for_network(
+    ad: android_device.AndroidDevice,
+    request_network_cb_handler: callback_handler_v2.CallbackHandlerV2,
+    expected_channel: str | None = None,
+) -> callback_event.CallbackEvent:
+  """Waits for and verifies the establishment of a Wi-Fi Aware network."""
+  network_callback_event = request_network_cb_handler.waitAndGet(
+      event_name=constants.NetworkCbEventName.NETWORK_CALLBACK,
+      timeout=_DEFAULT_TIMEOUT,
+  )
+  callback_name = network_callback_event.data[_CALLBACK_NAME]
+  if callback_name == constants.NetworkCbName.ON_UNAVAILABLE:
+    asserts.fail(
+        f'{ad} failed to request the network, got callback {callback_name}.'
+    )
+  elif callback_name == constants.NetworkCbName.ON_CAPABILITIES_CHANGED:
+    # `network` is the network whose capabilities have changed.
+    network = network_callback_event.data[constants.NetworkCbEventKey.NETWORK]
+    network_capabilities = network_callback_event.data[
+        constants.NetworkCbEventKey.NETWORK_CAPABILITIES
+    ]
+    asserts.assert_true(
+        network and network_capabilities,
+        f'{ad} received a null Network or NetworkCapabilities!?.',
+    )
+    transport_info_class_name = network_callback_event.data[
+        constants.NetworkCbEventKey.TRANSPORT_INFO_CLASS_NAME
+    ]
+    ad.log.info(f'got class_name {transport_info_class_name}')
+    asserts.assert_equal(
+        transport_info_class_name,
+        constants.AWARE_NETWORK_INFO_CLASS_NAME,
+        f'{ad} network capabilities changes but it is not a WiFi Aware'
+        ' network.',
+    )
+    if expected_channel:
+      mhz_list = network_callback_event.data[
+          constants.NetworkCbEventKey.CHANNEL_IN_MHZ
+      ]
+      asserts.assert_equal(
+          mhz_list,
+          [expected_channel],
+          f'{ad} Channel freq is not match the request.',
+      )
+  elif callback_name == constants.NetworkCbName.ON_PROPERTIES_CHANGED:
+    iface_name = network_callback_event.data[
+        constants.NetworkCbEventKey.NETWORK_INTERFACE_NAME
+    ]
+    ad.log.info('interface name = %s', iface_name)
+  else:
+    asserts.fail(
+        f'{ad} got unknown request network callback {callback_name}.'
+    )
+  return network_callback_event
+
+def wait_for_link(
+    ad: android_device.AndroidDevice,
+    request_network_cb_handler: callback_handler_v2.CallbackHandlerV2,
+) -> callback_event.CallbackEvent:
+  """Waits for and verifies the establishment of a Wi-Fi Aware network."""
+  network_callback_event = request_network_cb_handler.waitAndGet(
+      event_name=constants.NetworkCbEventName.NETWORK_CALLBACK,
+      timeout=_DEFAULT_TIMEOUT,
+  )
+  callback_name = network_callback_event.data[_CALLBACK_NAME]
+  if callback_name == constants.NetworkCbName.ON_UNAVAILABLE:
+    asserts.fail(
+        f'{ad} failed to request the network, got callback {callback_name}.'
+    )
+  elif callback_name == constants.NetworkCbName.ON_PROPERTIES_CHANGED:
+    iface_name = network_callback_event.data[
+        constants.NetworkCbEventKey.NETWORK_INTERFACE_NAME
+    ]
+    ad.log.info('interface name = %s', iface_name)
+  else:
+    asserts.fail(
+        f'{ad} got unknown request network callback {callback_name}.'
+    )
+  ad.log.info('type = %s', type(network_callback_event))
+  return network_callback_event
+
+
+def _wait_accept_success(
+    pub_accept_handler: callback_handler_v2.CallbackHandlerV2
+) -> None:
+    pub_accept_event = pub_accept_handler.waitAndGet(
+        event_name=constants.SnippetEventNames.SERVER_SOCKET_ACCEPT,
+        timeout=_DEFAULT_TIMEOUT
+    )
+    is_accept = pub_accept_event.data.get(constants.SnippetEventParams.IS_ACCEPT, False)
+    if not is_accept:
+        error = pub_accept_event.data[constants.SnippetEventParams.ERROR]
+        asserts.fail(
+            f'Publisher failed to accept the connection. Error: {error}'
+        )
+
+
+def _send_socket_msg(
+    sender_ad: android_device.AndroidDevice,
+    receiver_ad: android_device.AndroidDevice,
+    msg: str,
+    send_callback_id: str,
+    receiver_callback_id: str,
+):
+    """Sends a message from one device to another and verifies receipt."""
+    is_write_socket = sender_ad.wifi_aware_snippet.connectivityWriteSocket(
+        send_callback_id, msg
+    )
+    asserts.assert_true(
+        is_write_socket,
+        f'{sender_ad} Failed to write data to the socket.'
+    )
+    sender_ad.log.info('Wrote data to the socket.')
+    # Verify received message
+    received_message = receiver_ad.wifi_aware_snippet.connectivityReadSocket(
+        receiver_callback_id, len(msg)
+    )
+    asserts.assert_equal(
+        received_message,
+        msg,
+        f'{receiver_ad} received message mismatched.Failure:Expected {msg} but got '
+        f'{received_message}.'
+    )
+    receiver_ad.log.info('Read data from the socket.')
+
+
+def establish_socket_and_send_msg(
+    publisher: android_device.AndroidDevice,
+    subscriber: android_device.AndroidDevice,
+    pub_accept_handler: callback_handler_v2.CallbackHandlerV2,
+    network_id: str,
+    pub_local_port: int
+):
+    """Handles socket-based communication between publisher and subscriber."""
+    # Init socket
+    # Create a ServerSocket and makes it listen for client connections.
+    subscriber.wifi_aware_snippet.connectivityCreateSocketOverWiFiAware(
+        network_id, pub_local_port
+    )
+    _wait_accept_success(pub_accept_handler)
+    # Subscriber Send socket data
+    subscriber.log.info('Subscriber create a socket.')
+    _send_socket_msg(
+        sender_ad=subscriber,
+        receiver_ad=publisher,
+        msg=constants.WifiAwareTestConstants.MSG_CLIENT_TO_SERVER,
+        send_callback_id=network_id,
+        receiver_callback_id=network_id
+    )
+    _send_socket_msg(
+        sender_ad=publisher,
+        receiver_ad=subscriber,
+        msg=constants.WifiAwareTestConstants.MSG_SERVER_TO_CLIENT,
+        send_callback_id=network_id,
+        receiver_callback_id=network_id
+    )
+    publisher.wifi_aware_snippet.connectivityCloseWrite(network_id)
+    subscriber.wifi_aware_snippet.connectivityCloseWrite(network_id)
+    publisher.wifi_aware_snippet.connectivityCloseRead(network_id)
+    subscriber.wifi_aware_snippet.connectivityCloseRead(network_id)
+    logging.info('Communicated through socket connection of Wi-Fi Aware network successfully.')
+
+
+def run_ping6(dut: android_device.AndroidDevice, peer_ipv6: str):
+  """Run a ping6 over the specified device/link.
+
+  Args:
+    dut: Device on which to execute ping6.
+    peer_ipv6: Scoped IPv6 address of the peer to ping.
+  """
+  cmd = 'ping6 -c 3 -W 5 %s' % peer_ipv6
+  try:
+    dut.log.info(cmd)
+    results = dut.adb.shell(cmd)
+  except adb.AdbError:
+    time.sleep(1)
+    dut.log.info('CMD RETRY: %s', cmd)
+    results = dut.adb.shell(cmd)
+
+  dut.log.info("cmd='%s' -> '%s'", cmd, results)
+  if not results:
+    asserts.fail("ping6 empty results - seems like a failure")

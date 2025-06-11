@@ -2188,7 +2188,7 @@ public class WifiScanningServiceTest extends WifiBaseTest {
      * Register a single scan listener and do a single scan
      */
     @Test
-    public void deregisterScanListener() throws Exception {
+    public void testDeregisterScanListener() throws Exception {
         WifiScanner.ScanSettings requestSettings = createRequest(WifiScanner.WIFI_BAND_BOTH, 0,
                 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
         WifiNative.ScanSettings nativeSettings = computeSingleScanNativeSettings(requestSettings);
@@ -2231,6 +2231,21 @@ public class WifiScanningServiceTest extends WifiBaseTest {
 
         assertDumpContainsRequestLog("registerScanListener");
         assertDumpContainsRequestLog("deregisterScanListener");
+    }
+
+    /**
+     * Verify back to back calls to registerScanListener and deregisterScanListener works
+     */
+    @Test
+    public void testRegisterAndDeregisterListener() throws Exception {
+        startServiceAndLoadDriver();
+
+        TestClient client = new TestClient();
+        client.registerScanListener();
+        client.deregisterScanListener();
+        mLooper.dispatchAll();
+        client.verifySuccessfulResponse();
+        client.verifyUnlinkedToDeath();
     }
 
     /**

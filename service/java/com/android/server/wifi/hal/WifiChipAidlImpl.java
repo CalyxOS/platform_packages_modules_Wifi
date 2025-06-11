@@ -1638,6 +1638,9 @@ public class WifiChipAidlImpl implements IWifiChip {
         if (bitmapContains(halFeatureSet, FeatureSetMask.MLO_SAP)) {
             features.set(WifiManager.WIFI_FEATURE_SOFTAP_MLO);
         }
+        if (bitmapContains(halFeatureSet, FeatureSetMask.MULTIPLE_MLD_ON_SAP)) {
+            features.set(WifiManager.WIFI_FEATURE_MULTIPLE_MLD_ON_SAP);
+        }
         return features;
     }
 

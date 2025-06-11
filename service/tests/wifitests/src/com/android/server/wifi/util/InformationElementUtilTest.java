@@ -515,7 +515,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                                 (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x0F,
                                 (byte) 0xAC, (byte) 0x02, (byte) 0x00, (byte) 0x00 };
         verifyCapabilityStringFromIeWithoutOweSupported(ie,
-                "[WPA2-PSK-CCMP+TKIP][RSN-PSK-CCMP+TKIP]");
+                "[WPA2-PSK-CCMP-128+TKIP][RSN-PSK-CCMP-128+TKIP]");
     }
 
     /**
@@ -537,7 +537,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                                 (byte) 0x00, (byte) 0x00 // RSN capabilities
         };
         verifyCapabilityStringFromIeWithoutOweSupported(ie,
-                "[RSN-?-CCMP+TKIP]");
+                "[RSN-?-CCMP-128+TKIP]");
     }
 
     /**
@@ -576,7 +576,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x0c,
         };
         verifyCapabilityStringFromIeWithoutOweSupported(ie,
-                "[WPA2-EAP/SHA1-CCMP+TKIP][RSN-EAP/SHA1-CCMP+TKIP][MFPR]");
+                "[WPA2-EAP/SHA1-CCMP-128+TKIP][RSN-EAP/SHA1-CCMP-128+TKIP][MFPR]");
     }
 
     /**
@@ -608,8 +608,8 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x0c,
         };
         verifyCapabilityStringFromIeWithoutOweSupported(ie,
-                "[WPA2-EAP/SHA256-CCMP]"
-                        + "[RSN-EAP/SHA256-CCMP][MFPR][MFPC]");
+                "[WPA2-EAP/SHA256-CCMP-128]"
+                        + "[RSN-EAP/SHA256-CCMP-128][MFPR][MFPC]");
     }
 
     /**
@@ -637,8 +637,8 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0xc0, (byte) 0x00,
         };
         verifyCapabilityStringFromIeWithoutOweSupported(ie,
-                "[WPA2-EAP/SHA256-CCMP]"
-                        + "[RSN-EAP/SHA256-CCMP][MFPR][MFPC]");
+                "[WPA2-EAP/SHA256-CCMP-128]"
+                        + "[RSN-EAP/SHA256-CCMP-128][MFPR][MFPC]");
     }
 
     /**
@@ -672,8 +672,8 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x0c,
         };
         verifyCapabilityStringFromIeWithoutOweSupported(ie,
-                "[WPA2-EAP/SHA1+EAP/SHA256-CCMP]"
-                        + "[RSN-EAP/SHA1+EAP/SHA256-CCMP][MFPC]");
+                "[WPA2-EAP/SHA1+EAP/SHA256-CCMP-128]"
+                        + "[RSN-EAP/SHA1+EAP/SHA256-CCMP-128][MFPC]");
     }
 
     /**
@@ -703,7 +703,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x40, (byte) 0x00,
         };
         verifyCapabilityStringFromIeWithoutOweSupported(ie,
-                "[WPA2-EAP/SHA1-CCMP+TKIP][RSN-EAP/SHA1-CCMP+TKIP][MFPR]");
+                "[WPA2-EAP/SHA1-CCMP-128+TKIP][RSN-EAP/SHA1-CCMP-128+TKIP][MFPR]");
     }
 
     /**
@@ -736,7 +736,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                                 (byte) 0x00, (byte) 0x50, (byte) 0xF2, (byte) 0x02,
                                 (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x50,
                                 (byte) 0xF2, (byte) 0x02, (byte) 0x00, (byte) 0x00 };
-        verifyCapabilityStringFromIeWithoutOweSupported(ie, "[WPA-PSK-CCMP+TKIP]");
+        verifyCapabilityStringFromIeWithoutOweSupported(ie, "[WPA-PSK-CCMP-128+TKIP]");
     }
 
     /**
@@ -757,7 +757,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                                 (byte) 0x01, (byte) 0x00, // AKM count
                                 (byte) 0x00, (byte) 0x50, (byte) 0x99, (byte) 0x99, // Unknown AKM
                                 (byte) 0x00, (byte) 0x00};
-        verifyCapabilityStringFromIeWithoutOweSupported(ie, "[WPA-?-CCMP+TKIP]");
+        verifyCapabilityStringFromIeWithoutOweSupported(ie, "[WPA-?-CCMP-128+TKIP]");
     }
 
     /**
@@ -805,7 +805,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 0x1 << 4,
                 false,
                 false,
-                "[WPA-PSK-CCMP+TKIP][WPA2-PSK-CCMP+TKIP][RSN-PSK-CCMP+TKIP]",
+                "[WPA-PSK-CCMP-128+TKIP][WPA2-PSK-CCMP-128+TKIP][RSN-PSK-CCMP-128+TKIP]",
                 null);
     }
 
@@ -835,7 +835,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 // Padding
                 (byte) 0x00, (byte) 0x00 };
         verifyCapabilityStringFromIeWithOweSupported(
-                ieRsn, "[WPA2-PSK-CCMP][RSN-PSK+SAE-CCMP]", null);
+                ieRsn, "[WPA2-PSK-CCMP-128][RSN-PSK+SAE-CCMP-128]", null);
     }
 
     /**
@@ -863,7 +863,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x09,
                 // Padding
                 (byte) 0x00, (byte) 0x00 };
-        verifyCapabilityStringFromIeWithOweSupported(ieRsn, "[RSN-SAE+FT/SAE-CCMP]", null);
+        verifyCapabilityStringFromIeWithOweSupported(ieRsn, "[RSN-SAE+FT/SAE-CCMP-128]", null);
     }
 
     /**
@@ -891,7 +891,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x18,
                 // Padding
                 (byte) 0x00, (byte) 0x00 };
-        verifyCapabilityStringFromIeWithOweSupported(ieRsn, "[RSN-SAE+SAE_EXT_KEY-CCMP]", null);
+        verifyCapabilityStringFromIeWithOweSupported(ieRsn, "[RSN-SAE+SAE_EXT_KEY-CCMP-128]", null);
     }
 
     /**
@@ -921,7 +921,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 // Padding
                 (byte) 0x00, (byte) 0x00 };
         verifyCapabilityStringFromIeWithOweSupported(
-                ieRsn, "[RSN-SAE_EXT_KEY+FT/SAE_EXT_KEY-CCMP]", null);
+                ieRsn, "[RSN-SAE_EXT_KEY+FT/SAE_EXT_KEY-CCMP-128]", null);
     }
 
     /**
@@ -947,7 +947,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x12,
                 // Padding
                 (byte) 0x00, (byte) 0x00 };
-        verifyCapabilityStringFromIeWithOweSupported(ieRsn, "[RSN-OWE-CCMP]", null);
+        verifyCapabilityStringFromIeWithOweSupported(ieRsn, "[RSN-OWE-CCMP-128]", null);
     }
 
     /**
@@ -963,7 +963,8 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x50, (byte) 0x6F, (byte) 0x9A, (byte) 0x1C,
                 // OWE IE contains BSSID, SSID and channel of other BSS, but we don't parse it.
                 (byte) 0x00, (byte) 0x000, (byte) 0x00, (byte) 0x00 };
-        verifyCapabilityStringFromIe(ieOwe, 0x1 << 0, true, "[RSN-OWE_TRANSITION-CCMP][ESS]", null);
+        verifyCapabilityStringFromIe(ieOwe, 0x1 << 0, true, "[RSN-OWE_TRANSITION-CCMP-128][ESS]",
+                null);
     }
 
     /**
@@ -1015,6 +1016,38 @@ public class InformationElementUtilTest extends WifiBaseTest {
     }
 
     /**
+     * Test Capabilities.generateCapabilitiesString() with RSN IE, GCMP-128 and SUITE_B_192.
+     * Expect the function to return a string with the proper security information.
+     */
+    @Test
+    public void buildCapabilities_rsnSuiteB192ElementWithGcmp128() {
+        InformationElement ieRsn = new InformationElement();
+        ieRsn.id = InformationElement.EID_RSN;
+        ieRsn.bytes = new byte[] {
+                // RSNE Version (0x0001)
+                (byte) 0x01, (byte) 0x00,
+                // Group cipher suite: GCMP-128
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x09,
+                // Number of cipher suites (1)
+                (byte) 0x01, (byte) 0x00,
+                // Cipher suite: GCMP-256
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x08,
+                // Number of AKMs (1)
+                (byte) 0x01, (byte) 0x00,
+                // SUITE_B_192 AKM
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x0C,
+                // RSN capabilities
+                (byte) 0x40, (byte) 0x00,
+                // PMKID count
+                (byte) 0x00, (byte) 0x00,
+                // Group mgmt cipher suite: BIP_GMAC_256
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x0c,
+        };
+        verifyCapabilityStringFromIeWithoutOweSupported(ieRsn,
+                "[RSN-EAP_SUITE_B_192-GCMP-128][MFPR]");
+    }
+
+    /**
      * Test Capabilities.generateCapabilitiesString() with RSN IE,
      * CCMP and FILS SHA256. Expect the function to return a string
      * with the proper security information.
@@ -1044,8 +1077,8 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x00 };
         verifyCapabilityStringFromIeWithOweSupported(
                 ieRsn,
-                "[WPA2-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP]"
-                        + "[RSN-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP]",
+                "[WPA2-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP-128]"
+                        + "[RSN-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP-128]",
                 null);
     }
 
@@ -1079,8 +1112,8 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 (byte) 0x00, (byte) 0x00 };
         verifyCapabilityStringFromIeWithOweSupported(
                 ieRsn,
-                "[WPA2-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA384-CCMP]"
-                        + "[RSN-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA384-CCMP]",
+                "[WPA2-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA384-CCMP-128]"
+                        + "[RSN-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA384-CCMP-128]",
                 null);
     }
 
@@ -1130,7 +1163,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                     (byte) 0x00
                 };
         verifyCapabilityStringFromIeWithOweSupported(
-                ieRsn, "[RSN-SAE_EXT_KEY-CCMP]", unknownAkmMap);
+                ieRsn, "[RSN-SAE_EXT_KEY-CCMP-128]", unknownAkmMap);
     }
 
     /**
@@ -1212,7 +1245,8 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 0x1 << 4,
                 true,
                 true,
-                "[WPA2-PSK-CCMP][RSN-PSK-CCMP][RSN-SAE-CCMP][RSN-SAE_EXT_KEY-GCMP-256][MFPC][RSNO]",
+                "[WPA2-PSK-CCMP-128][RSN-PSK-CCMP-128][RSN-SAE-CCMP-128][RSN-SAE_EXT_KEY-GCMP-256"
+                        + "][MFPC][RSNO]",
                 null);
     }
 
@@ -1274,7 +1308,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 0x1 << 4,
                 true,
                 true,
-                "[RSN-SAE-CCMP][RSN-SAE_EXT_KEY-GCMP-256][MFPR][MFPC][RSNO]",
+                "[RSN-SAE-CCMP-128][RSN-SAE_EXT_KEY-GCMP-256][MFPR][MFPC][RSNO]",
                 null);
     }
 
@@ -1333,7 +1367,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
                 0x1 << 4,
                 true,
                 false,
-                "[WPA2-PSK-CCMP][RSN-PSK-CCMP]",
+                "[WPA2-PSK-CCMP-128][RSN-PSK-CCMP-128]",
                 null);
     }
 
@@ -1380,7 +1414,7 @@ public class InformationElementUtilTest extends WifiBaseTest {
         ieWps.bytes = new byte[] { (byte) 0x00, (byte) 0x50, (byte) 0xF2, (byte) 0x04 };
 
         InformationElement[] ies = new InformationElement[] { ieWpa, ieWps };
-        verifyCapabilityStringFromIes(ies, 0x1 << 4, false, false, "[WPA-PSK-CCMP+TKIP][WPS]",
+        verifyCapabilityStringFromIes(ies, 0x1 << 4, false, false, "[WPA-PSK-CCMP-128+TKIP][WPS]",
                 null);
     }
 
@@ -2831,4 +2865,92 @@ public class InformationElementUtilTest extends WifiBaseTest {
         assertEquals(6105, ehtOperation.getCenterFreq1(ScanResult.WIFI_BAND_6_GHZ));
 
     }
+
+    /**
+     * Test Capabilities.generateCapabilitiesString() with a RSN IE.
+     * Expect the function to return a string with the proper security information.
+     */
+    @Test
+    public void buildCapabilities_rsnElementWithPasnSae() {
+        InformationElement ie = new InformationElement();
+        ie.id = InformationElement.EID_RSN;
+        ie.bytes = new byte[] {
+                // Version
+                (byte) 0x01, (byte) 0x00,
+                // Group cipher suite: TKIP
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x02,
+                // Pairwise cipher count
+                (byte) 0x02, (byte) 0x00,
+                // Pairwise cipher suite: CCMP
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x04,
+                // Pairwise cipher suite: GCMP_256
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x09,
+                // AKM count
+                (byte) 0x02, (byte) 0x00,
+                // AMK suite: PASN
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x15,
+                // AKM suite: SAE
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x08,
+                // RSN capabilities
+                (byte) 0x40, (byte) 0x00,
+        };
+        verifyCapabilityStringFromIeWithoutOweSupported(ie,
+                     "[RSN-PASN+SAE-CCMP-128+GCMP-256][MFPR]");
+    }
+
+    /**
+     * Test Capabilities.generateCapabilitiesString() with a RSN IE.
+     * Expect the function to return a string with the proper security information.
+     */
+    @Test
+    public void buildCapabilities_rsnElementWithPasnSaeAndCcmp256() {
+        InformationElement ie = new InformationElement();
+        ie.id = InformationElement.EID_RSN;
+        ie.bytes = new byte[] {
+                // Version
+                (byte) 0x01, (byte) 0x00,
+                // Group cipher suite: TKIP
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x02,
+                // Pairwise cipher count
+                (byte) 0x01, (byte) 0x00,
+                // Pairwise cipher suite: CCMP-256
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x0A,
+                // AKM count
+                (byte) 0x02, (byte) 0x00,
+                // AMK suite: PASN
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x15,
+                // AKM suite: SAE
+                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x08,
+                // RSN capabilities
+                (byte) 0x40, (byte) 0x00,
+        };
+        verifyCapabilityStringFromIeWithoutOweSupported(ie,
+                "[RSN-PASN+SAE-CCMP-256][MFPR]");
+    }
+
+    /**
+     * Test RSNXE capabilities for IEEE 802.11az secure ranging support.
+     * <ul>
+     *     <li> Bit 8 : Secure HE-LTF Support
+     *     <li> Bit 15: URNM-MFPR
+     * </ul>
+     */
+    @Test
+    public void testRsnExtensionWithIeee80211azSecuritySupported() {
+        InformationElement ie = new InformationElement();
+        ie.id = InformationElement.EID_RSN_EXTENSION;
+        ie.bytes = new byte[]{
+                // Length
+                (byte) 0x02,
+                // Extended RSN capabilities - Secure HE-LTF and URNM-MFPR enabled
+                (byte) 0x81, (byte) 0x00,
+        };
+
+        InformationElementUtil.Rsnxe rsnxe = new InformationElementUtil.Rsnxe();
+        rsnxe.from(ie);
+        assertTrue(rsnxe.isRangingFrameProtectionRequired());
+        assertTrue(rsnxe.isSecureHeLtfSupported());
+    }
+
 }
+

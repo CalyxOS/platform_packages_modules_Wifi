@@ -123,6 +123,6 @@ public class PublishSession {
             executor.execute(() -> resultCallback.accept(false));
             return;
         }
-        usdManager.sendMessage(peerId, message, executor, resultCallback);
+        usdManager.sendMessage(mSessionId, peerId, message, executor, resultCallback);
     }
 }

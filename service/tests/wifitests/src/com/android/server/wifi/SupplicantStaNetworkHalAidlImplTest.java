@@ -24,7 +24,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
@@ -777,6 +777,23 @@ public class SupplicantStaNetworkHalAidlImplTest extends WifiBaseTest {
         Map<String, String> networkExtras = new HashMap<>();
         assertTrue(mSupplicantNetwork.loadWifiConfiguration(loadConfig, networkExtras));
         WifiConfigurationTestUtil.assertConfigurationEqualForSupplicant(config, loadConfig);
+    }
+
+    /**
+     * Tests the addition of multiple AKM when the 64 byte Hexadecimal PSK is used as preSharedKey.
+     */
+    @Test
+    public void testAddPskSaeAkmWhenRawPskIsUsedAsPreSharedKey() throws Exception {
+        WifiConfiguration config = WifiConfigurationTestUtil.createPskNetwork();
+        config.preSharedKey = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+        config.getNetworkSelectionStatus().setCandidateSecurityParams(
+                config.getDefaultSecurityParams());
+        assertTrue(mSupplicantNetwork.saveWifiConfiguration(config));
+
+        assertEquals(KeyMgmtMask.WPA_PSK, (mSupplicantVariables.keyMgmtMask & KeyMgmtMask.WPA_PSK));
+        // Verify that the SAE AKM is not added.
+        assertEquals(0, (mSupplicantVariables.keyMgmtMask & KeyMgmtMask.SAE));
+        assertFalse(mSupplicantVariables.requirePmf);
     }
 
     /**

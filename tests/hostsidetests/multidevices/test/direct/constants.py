@@ -52,8 +52,12 @@ EVENT_KEY_PEER_LIST = 'peerList'
 EXTRA_WIFI_P2P_GROUP = 'p2pGroupInfo'
 EXTRA_WIFI_STATE = 'wifi_p2p_state'
 
+ON_CONNECTION_INFO_AVAILABLE = 'WifiP2pOnConnectionInfoAvailable'
 ON_DEVICE_INFO_AVAILABLE = 'WifiP2pOnDeviceInfoAvailable'
 ON_PERSISTENT_GROUP_INFO_AVAILABLE = 'onPersistentGroupInfoAvailable'
+ON_UPNP_SERVICE_AVAILABLE = 'onUpnpServiceAvailable'
+ON_DNS_SD_SERVICE_AVAILABLE = 'onDnsSdServiceAvailable'
+ON_DNS_SD_TXT_RECORD_AVAILABLE = 'onDnsSdTxtRecordAvailable'
 WIFI_P2P_CREATING_GROUP = 'CREATING_GROUP'
 WIFI_P2P_CONNECTION_CHANGED_ACTION = (
     'android.net.wifi.p2p.CONNECTION_STATE_CHANGE'
@@ -204,7 +208,7 @@ class WifiP2pDevice:
       cls, devices: list[dict[str, Any]]
   ) -> Sequence[WifiP2pDevice]:
     """Generates WifiP2pDevice objects from a list of dictionary."""
-    return (cls.from_dict(device) for device in devices)
+    return [cls.from_dict(device) for device in devices]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -261,5 +265,97 @@ class WifiP2pGroup:
       cls, groups: list[dict[str, Any]]
   ) -> Sequence[WifiP2pGroup]:
     """Generates WifiP2pGroup objects from a list of dictionary."""
-    return (cls.from_dict(group) for group in groups)
+    return [cls.from_dict(group) for group in groups]
 
+
+@enum.unique
+class ServiceType(enum.IntEnum):
+    """Indicates the type of Wi-Fi p2p services.
+
+    https://developer.android.com/reference/android/net/wifi/p2p/nsd/WifiP2pServiceInfo#summary
+    """
+
+    ALL = 0
+    BONJOUR = 1
+    UPNP = 2
+    WS_DISCOVERY = 3
+
+
+class ServiceData:
+    """Constants for Wi-Fi p2p services."""
+
+    # Service configurations.
+    # Configuration for Bonjour IPP local service.
+    IPP_DNS_SD = (('MyPrinter', '_ipp._tcp.local.'),)
+    AFP_DNS_SD = (('Example', '_afpovertcp._tcp.local.'),)
+    ALL_DNS_SD = (
+        ('MyPrinter', '_ipp._tcp.local.'),
+        ('Example', '_afpovertcp._tcp.local.'),
+    )
+
+    IPP_DNS_TXT = (
+        ('myprinter._ipp._tcp.local.', {
+            'txtvers': '1',
+            'pdl': 'application/postscript'
+        }),
+    )
+    AFP_DNS_TXT = (('example._afpovertcp._tcp.local.', {}),)
+    ALL_DNS_TXT = (('myprinter._ipp._tcp.local.',
+                    {
+                        'txtvers': '1',
+                        'pdl': 'application/postscript'
+                    }
+                    ), ('example._afpovertcp._tcp.local.', {}),)
+
+    # Configuration for IPP local service.
+    DEFAULT_IPP_SERVICE_CONF = {
+        'instance_name': 'MyPrinter',
+        'service_type': '_ipp._tcp',
+        'txt_map': {
+            'txtvers': '1',
+            'pdl': 'application/postscript'
+        },
+    }
+    # Configuration for AFP local service.
+    DEFAULT_AFP_SERVICE_CONF = {
+        'instance_name': 'Example',
+        'service_type': '_afpovertcp._tcp',
+        'txt_map': {},
+    }
+    # Configuration for UPnP MediaRenderer local service.
+    DEFAULT_UPNP_SERVICE_CONF = {
+        'uuid': '6859dede-8574-59ab-9332-123456789011',
+        'device': 'urn:schemas-upnp-org:device:MediaRenderer:1',
+        'services': [
+            'urn:schemas-upnp-org:service:AVTransport:1',
+            'urn:schemas-upnp-org:service:ConnectionManager:1',
+        ],
+    }
+
+    # Expected services to be discovered.
+    ALL_UPNP_SERVICES = (
+        'uuid:6859dede-8574-59ab-9332-123456789011',
+        'uuid:6859dede-8574-59ab-9332-123456789011::upnp:rootdevice',
+        (
+            'uuid:6859dede-8574-59ab-9332-123456789011::urn:schemas-upnp-org:'
+            'device:MediaRenderer:1'
+        ),
+        (
+            'uuid:6859dede-8574-59ab-9332-123456789011::urn:schemas-upnp-org:'
+            'service:AVTransport:1'
+        ),
+        (
+            'uuid:6859dede-8574-59ab-9332-123456789011::urn:schemas-upnp-org:'
+            'service:ConnectionManager:1'
+        ),
+    )
+
+    UPNP_ROOT_DEVICE = ('uuid:6859dede-8574-59ab-9332-123456789011::upnp:rootdevice',)
+
+
+class WifiP2pManagerConstants:
+    """Constants for Wi-Fi p2p manager.
+
+    https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pManager#NO_SERVICE_REQUESTS
+    """
+    NO_SERVICE_REQUESTS = 3

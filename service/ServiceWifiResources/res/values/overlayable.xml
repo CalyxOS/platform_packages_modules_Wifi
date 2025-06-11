@@ -355,7 +355,8 @@
           <item type="integer" name="config_wifiDelayedCarrierSelectionTimeMs" />
           <item type="bool" name="config_wifiRsnOverridingEnabled" />
           <item type="bool" name="config_wifi_subsystem_restart_bugreport_enabled" />
-          <item type="bool" name="config_wifiNl80211HalEnabled" />
+          <item type="bool" name="config_wifiVoipDetectionEnabled" />
+          <item type="bool" name="config_wifiUsdPublisherSupported" />
 
           <!-- Params from config.xml that can be overlayed -->
 
@@ -428,8 +429,6 @@
           <item type="string" name="wifi_eap_error_message_code_32765" />
           <item type="string" name="wifi_eap_error_message_code_32766" />
           <item type="string" name="wifi_eap_error_message_code_32767" />
-          <item type="string" name="wifi_eap_error_message_code_32768" />
-          <item type="string" name="wifi_eap_error_message_code_32769" />
           <item type="string" name="wifi_eap_error_message_code_16384" />
           <item type="string" name="wifi_eap_error_message_code_16385" />
           <item type="string" name="wifi_eap_error_message_unknown_error_code" />

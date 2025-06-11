@@ -19,7 +19,7 @@ package {
 
 android_test {
     name: "wifi_aware_snippet",
-    sdk_version: "current",
+    sdk_version: "system_current",
     srcs: [
         "CallbackUtils.java",
         "WifiAwareSnippet.java",
@@ -37,7 +37,7 @@ android_test {
 
 android_test {
     name: "wifi_aware_snippet_new",
-    sdk_version: "current",
+    sdk_version: "system_current",
     srcs: [
         "ConnectivityManagerSnippet.java",
         "PermissionUtils.java",
@@ -53,6 +53,7 @@ android_test {
         "compatibility-device-util-axt",
         "guava",
         "mobly-snippet-lib",
+        "mobly-bundled-snippets-lib",
     ],
-    min_sdk_version: "30",
+    min_sdk_version: "31",
 }

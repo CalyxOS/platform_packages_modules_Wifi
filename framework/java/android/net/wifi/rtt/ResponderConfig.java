@@ -439,6 +439,10 @@ public final class ResponderConfig implements Parcelable {
         int centerFreq1 = scanResult.centerFreq1;
 
         int preamble;
+        // The IEEE 802.11mc is only compatible with HE and EHT when using the 6 GHz band.
+        // However, the IEEE 802.11az supports HE and EHT across all Wi-Fi bands (2.4GHz, 5 GHz,
+        // and 6 GHz).
+        boolean isHeOrEhtAllowed = supports80211azNtbRanging || ScanResult.is6GHz(frequency);
         if (scanResult.informationElements != null && scanResult.informationElements.length != 0) {
             boolean htCapabilitiesPresent = false;
             boolean vhtCapabilitiesPresent = false;
@@ -457,9 +461,9 @@ public final class ResponderConfig implements Parcelable {
                 }
             }
 
-            if (ehtCapabilitiesPresent && ScanResult.is6GHz(frequency)) {
+            if (ehtCapabilitiesPresent && isHeOrEhtAllowed) {
                 preamble = ScanResult.PREAMBLE_EHT;
-            } else if (heCapabilitiesPresent && ScanResult.is6GHz(frequency)) {
+            } else if (heCapabilitiesPresent && isHeOrEhtAllowed) {
                 preamble = ScanResult.PREAMBLE_HE;
             } else if (vhtCapabilitiesPresent) {
                 preamble = ScanResult.PREAMBLE_VHT;
@@ -470,9 +474,10 @@ public final class ResponderConfig implements Parcelable {
             }
         } else {
             Log.e(TAG, "Scan Results do not contain IEs - using backup method to select preamble");
-            if (channelWidth == ScanResult.CHANNEL_WIDTH_320MHZ) {
+            if (channelWidth == ScanResult.CHANNEL_WIDTH_320MHZ && isHeOrEhtAllowed) {
                 preamble = ScanResult.PREAMBLE_EHT;
-            } else if (channelWidth == ScanResult.CHANNEL_WIDTH_80MHZ
+            } else if (channelWidth == ScanResult.CHANNEL_WIDTH_320MHZ
+                    || channelWidth == ScanResult.CHANNEL_WIDTH_80MHZ
                     || channelWidth == ScanResult.CHANNEL_WIDTH_160MHZ) {
                 preamble = ScanResult.PREAMBLE_VHT;
             } else {
@@ -509,12 +514,13 @@ public final class ResponderConfig implements Parcelable {
         if (scanResult.getWifiSsid() != null) {
             pasnConfigBuilder.setWifiSsid(scanResult.getWifiSsid());
         }
+        // If the responder is capable of PASN, always enable frame protection for secure ranging
+        // irrespective of responder mandates or not.
         return new SecureRangingConfig.Builder(pasnConfigBuilder.build())
                 .setSecureHeLtfEnabled(scanResult.isSecureHeLtfSupported())
                 .setRangingFrameProtectionEnabled(true)
                 .build();
     }
-
 
     /**
      * Creates a Responder configuration from a MAC address corresponding to a Wi-Fi Aware
@@ -1027,6 +1033,7 @@ public final class ResponderConfig implements Parcelable {
         dest.writeInt(preamble);
         dest.writeLong(mNtbMinMeasurementTime);
         dest.writeLong(mNtbMaxMeasurementTime);
+        dest.writeParcelable(mSecureRangingConfig, flags);
     }
 
     public static final @android.annotation.NonNull Creator<ResponderConfig> CREATOR = new Creator<ResponderConfig>() {
@@ -1048,7 +1055,7 @@ public final class ResponderConfig implements Parcelable {
                 peerHandle = new PeerHandle(in.readInt());
             }
 
-            return new ResponderConfig.Builder()
+            ResponderConfig.Builder builder = new Builder()
                     .setMacAddress(macAddress)
                     .setPeerHandle(peerHandle)
                     .setResponderType(in.readInt())
@@ -1060,8 +1067,15 @@ public final class ResponderConfig implements Parcelable {
                     .setCenterFreq1Mhz(in.readInt())
                     .setPreamble(in.readInt())
                     .setNtbMinTimeBetweenMeasurementsMicros(in.readLong())
-                    .setNtbMaxTimeBetweenMeasurementsMicros(in.readLong())
-                    .build();
+                    .setNtbMaxTimeBetweenMeasurementsMicros(in.readLong());
+            SecureRangingConfig secureRangingConfig = in.readParcelable(
+                    SecureRangingConfig.class.getClassLoader());
+
+            if (secureRangingConfig != null) {
+                builder.setSecureRangingConfig(secureRangingConfig);
+            }
+            return new ResponderConfig(builder);
+
         }
     };
 
@@ -1084,14 +1098,15 @@ public final class ResponderConfig implements Parcelable {
                 && centerFreq1 == lhs.centerFreq1 && preamble == lhs.preamble
                 && supports80211azNtb == lhs.supports80211azNtb
                 && mNtbMinMeasurementTime == lhs.mNtbMinMeasurementTime
-                && mNtbMaxMeasurementTime == lhs.mNtbMaxMeasurementTime;
+                && mNtbMaxMeasurementTime == lhs.mNtbMaxMeasurementTime
+                && Objects.equals(mSecureRangingConfig, lhs.mSecureRangingConfig);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(macAddress, peerHandle, responderType, supports80211mc, channelWidth,
                 frequency, centerFreq0, centerFreq1, preamble, supports80211azNtb,
-                mNtbMinMeasurementTime, mNtbMaxMeasurementTime);
+                mNtbMinMeasurementTime, mNtbMaxMeasurementTime, mSecureRangingConfig);
     }
 
     @Override

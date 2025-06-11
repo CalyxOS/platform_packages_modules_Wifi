@@ -118,7 +118,7 @@ public final class WifiP2pUsdBasedLocalServiceAdvertisementConfig implements Par
          *
          */
         @NonNull
-        public Builder setFrequencyMhz(@IntRange(from = 0) int frequencyMhz) {
+        public Builder setFrequencyMhz(@IntRange(from = 1) int frequencyMhz) {
             if (frequencyMhz <= 0) {
                 throw new IllegalArgumentException("Frequency must be greater than 0");
             }

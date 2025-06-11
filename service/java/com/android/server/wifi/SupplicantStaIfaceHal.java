@@ -23,11 +23,14 @@ import android.net.wifi.MscsParams;
 import android.net.wifi.QosPolicyParams;
 import android.net.wifi.SecurityParams;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.usd.PublishConfig;
+import android.net.wifi.usd.SubscribeConfig;
 import android.os.Handler;
 import android.util.Log;
 import android.util.Range;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.server.wifi.usd.UsdRequestManager;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -2415,5 +2418,164 @@ public class SupplicantStaIfaceHal {
     private boolean handleNullHal(String methodStr) {
         Log.e(TAG, "Cannot call " + methodStr + " because HAL object is null.");
         return false;
+    }
+
+    public static class UsdCapabilitiesInternal {
+        /** Whether USD Publisher is supported on this device. */
+        public boolean isUsdPublisherSupported;
+        /** Whether USD Subscriber is supported on this device. */
+        public final boolean isUsdSubscriberSupported;
+        /** Maximum allowed length (in bytes) for the Service Specific Info (SSI). */
+        public final int maxLocalSsiLengthBytes;
+        /** Maximum allowed length (in bytes) for the service name. */
+        public final int maxServiceNameLengthBytes;
+        /** Maximum allowed length (in bytes) for a match filter. */
+        public final int maxMatchFilterLengthBytes;
+        /** Maximum number of allowed publish sessions. */
+        public final int maxNumPublishSessions;
+        /** Maximum number of allowed subscribe sessions. */
+        public final int maxNumSubscribeSessions;
+
+        public UsdCapabilitiesInternal(boolean isUsdPublisherSupported,
+                boolean isUsdSubscriberSupported,
+                int maxLocalSsiLengthBytes, int maxServiceNameLengthBytes,
+                int maxMatchFilterLengthBytes,
+                int maxNumPublishSessions, int maxNumSubscribeSessions) {
+            this.isUsdPublisherSupported = isUsdPublisherSupported;
+            this.isUsdSubscriberSupported = isUsdSubscriberSupported;
+            this.maxLocalSsiLengthBytes = maxLocalSsiLengthBytes;
+            this.maxServiceNameLengthBytes = maxServiceNameLengthBytes;
+            this.maxMatchFilterLengthBytes = maxMatchFilterLengthBytes;
+            this.maxNumPublishSessions = maxNumPublishSessions;
+            this.maxNumSubscribeSessions = maxNumSubscribeSessions;
+        }
+
+        public UsdCapabilitiesInternal() {
+            this.isUsdPublisherSupported = false;
+            this.isUsdSubscriberSupported = false;
+            this.maxLocalSsiLengthBytes = 0;
+            this.maxServiceNameLengthBytes = 0;
+            this.maxMatchFilterLengthBytes = 0;
+            this.maxNumPublishSessions = 0;
+            this.maxNumSubscribeSessions = 0;
+        }
+    }
+
+    /**
+     * See comments for {@link ISupplicantStaIfaceHal#getUsdCapabilities(String)}
+     */
+    public UsdCapabilitiesInternal getUsdCapabilities(String ifaceName) {
+        synchronized (mLock) {
+            String methodStr = "getUsdCapabilities";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return null;
+            }
+            return mStaIfaceHal.getUsdCapabilities(ifaceName);
+        }
+    }
+
+    /**
+     * See comments for {@link ISupplicantStaIfaceHal#startUsdPublish(String, int, PublishConfig)}
+     */
+    public boolean startUsdPublish(String interfaceName, int cmdId, PublishConfig publishConfig) {
+        synchronized (mLock) {
+            String methodStr = "startUsdPublish";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return false;
+            }
+            return mStaIfaceHal.startUsdPublish(interfaceName, cmdId, publishConfig);
+        }
+    }
+
+    /**
+     * See comments for
+     * {@link WifiNative#registerUsdEventsCallback(UsdRequestManager.UsdNativeEventsCallback)}
+     */
+    public void registerUsdEventsCallback(
+            UsdRequestManager.UsdNativeEventsCallback usdNativeEventsCallback) {
+        synchronized (mLock) {
+            String methodStr = "registerUsdEventsCallback";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return;
+            }
+            mStaIfaceHal.registerUsdEventsCallback(usdNativeEventsCallback);
+        }
+    }
+
+    /**
+     * See comments for
+     * {@link ISupplicantStaIfaceHal#startUsdSubscribe(String, int, SubscribeConfig)}
+     */
+    public boolean startUsdSubscribe(String interfaceName, int cmdId,
+            SubscribeConfig subscribeConfig) {
+        synchronized (mLock) {
+            String methodStr = "startUsdSubscribe";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return false;
+            }
+            return mStaIfaceHal.startUsdSubscribe(interfaceName, cmdId, subscribeConfig);
+        }
+    }
+
+    /**
+     * See comments for {@link ISupplicantStaIfaceHal#updateUsdPublish(String, int, byte[])}
+     */
+    public void updateUsdPublish(String interfaceName, int publishId, byte[] ssi) {
+        synchronized (mLock) {
+            String methodStr = "updateUsdPublish";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return;
+            }
+            mStaIfaceHal.updateUsdPublish(interfaceName, publishId, ssi);
+        }
+    }
+
+    /**
+     * See comments for {@link ISupplicantStaIfaceHal#cancelUsdPublish(String, int)}
+     */
+    public void cancelUsdPublish(String interfaceName, int publishId) {
+        synchronized (mLock) {
+            String methodStr = "cancelUsdPublish";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return;
+            }
+            mStaIfaceHal.cancelUsdPublish(interfaceName, publishId);
+        }
+    }
+
+    /**
+     * See {@link ISupplicantStaIfaceHal#cancelUsdSubscribe(String, int)}
+     */
+    public void cancelUsdSubscribe(String interfaceName, int subscribeId) {
+        synchronized (mLock) {
+            String methodStr = "cancelUsdSubscribe";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return;
+            }
+            mStaIfaceHal.cancelUsdSubscribe(interfaceName, subscribeId);
+        }
+    }
+
+    /**
+     * See {@link ISupplicantStaIfaceHal#sendUsdMessage(String, int, int, MacAddress, byte[])}
+     */
+    public boolean sendUsdMessage(String interfaceName, int ownId, int peerId,
+            MacAddress peerMacAddress, byte[] message) {
+        synchronized (mLock) {
+            String methodStr = "sendMessage";
+            if (mStaIfaceHal == null) {
+                handleNullHal(methodStr);
+                return false;
+            }
+            return mStaIfaceHal.sendUsdMessage(interfaceName, ownId, peerId, peerMacAddress,
+                    message);
+        }
     }
 }

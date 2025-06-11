@@ -461,6 +461,8 @@ public class WifiP2pConfigTest {
                 c.getPairingBootstrappingConfig();
         assertNotNull(pairingBootstrappingConfig);
         assertEquals(expectedPairingBootstrappingConfig, pairingBootstrappingConfig);
+        assertEquals(c.getGroupClientIpProvisioningMode(),
+                GROUP_CLIENT_IP_PROVISIONING_MODE_IPV6_LINK_LOCAL);
     }
 
     /**
@@ -477,12 +479,12 @@ public class WifiP2pConfigTest {
                 .setDeviceAddress(MacAddress.fromString(DEVICE_ADDRESS))
                 .setPairingBootstrappingConfig(expectedPairingBootstrappingConfig)
                 .setGroupOperatingFrequency(2437)
-                .setAuthorizeConnectionFromPeer(true)
+                .setAuthorizeConnectionFromPeerEnabled(true)
                 .build();
         WifiP2pPairingBootstrappingConfig pairingBootstrappingConfig =
                 c.getPairingBootstrappingConfig();
         assertNotNull(pairingBootstrappingConfig);
         assertEquals(expectedPairingBootstrappingConfig, pairingBootstrappingConfig);
-        assertTrue(c.isAuthorizeConnectionFromPeer());
+        assertTrue(c.isAuthorizeConnectionFromPeerEnabled());
     }
 }

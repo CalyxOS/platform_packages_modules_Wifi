@@ -26,6 +26,8 @@ import android.net.wifi.SoftApConfiguration.BandType;
 import android.os.Parcel;
 import android.os.Parcelable;
 
+import androidx.annotation.Keep;
+
 import com.android.wifi.flags.Flags;
 
 import java.lang.annotation.Retention;
@@ -271,6 +273,7 @@ public final class SoftApCapability implements Parcelable {
      * @throws IllegalArgumentException when band type is invalid.
      * @hide
      */
+    @Keep
     public boolean setSupportedChannelList(@BandType int band,
             @Nullable int[] supportedChannelList) {
         if (supportedChannelList == null)  return false;

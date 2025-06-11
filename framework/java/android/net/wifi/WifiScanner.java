@@ -34,7 +34,6 @@ import android.content.Context;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.Process;
@@ -46,6 +45,7 @@ import android.util.Log;
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.util.Protocol;
+import com.android.modules.utils.ParceledListSlice;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.wifi.flags.Flags;
 
@@ -388,14 +388,14 @@ public class WifiScanner {
          * reports full scan result for all access points found in scan
          */
         @Override
-        public void onFullResults(List<ScanResult> fullScanResult) {
+        public void onFullResults(ParceledListSlice<ScanResult> fullScanResult) {
             Log.i(TAG, "onFullResults");
             if (mActionListener == null) return;
             if (!(mActionListener instanceof ScanListener)) return;
             ScanListener scanListener = (ScanListener) mActionListener;
             Binder.clearCallingIdentity();
             mExecutor.execute(
-                    () -> fullScanResult.forEach(scanListener::onFullResult));
+                    () -> fullScanResult.getList().forEach(scanListener::onFullResult));
         }
 
         @Override
@@ -1022,7 +1022,8 @@ public class WifiScanner {
             dest.writeInt(mFlags);
             dest.writeInt(mBucketsScanned);
             dest.writeInt(mScannedBands);
-            dest.writeParcelableList(mResults, 0);
+            ParceledListSlice<ScanResult> parceledListSlice = new ParceledListSlice<>(mResults);
+            parceledListSlice.writeToParcel(dest, flags);
         }
 
         /** Implement the Parcelable interface {@hide} */
@@ -1033,9 +1034,10 @@ public class WifiScanner {
                         int flags = in.readInt();
                         int bucketsScanned = in.readInt();
                         int bandsScanned = in.readInt();
-                        List<ScanResult> results = new ArrayList<>();
-                        in.readParcelableList(results, ScanResult.class.getClassLoader());
-                        return new ScanData(id, flags, bucketsScanned, bandsScanned, results);
+                        ParceledListSlice<ScanResult> parceledListSlice =
+                                ParceledListSlice.CREATOR.createFromParcel(in);
+                        return new ScanData(id, flags, bucketsScanned, bandsScanned,
+                                parceledListSlice.getList());
                     }
 
                     public ScanData[] newArray(int size) {
@@ -2022,12 +2024,9 @@ public class WifiScanner {
      *
      * @param context the application context
      * @param service the Binder interface for {@link Context#WIFI_SCANNING_SERVICE}
-     * @param looper the Looper used to deliver callbacks
-     *
      * @hide
      */
-    public WifiScanner(@NonNull Context context, @NonNull IWifiScanner service,
-            @NonNull Looper looper) {
+    public WifiScanner(@NonNull Context context, @NonNull IWifiScanner service) {
         mContext = context;
         mService = service;
     }

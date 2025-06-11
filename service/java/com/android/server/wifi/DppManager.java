@@ -74,6 +74,7 @@ public class DppManager {
     private static final String DPP_TIMEOUT_TAG = TAG + " Request Timeout";
     private static final int DPP_TIMEOUT_MS = 40_000; // 40 seconds
     private static final int DPP_RESPONDER_TIMEOUT_MS = 300_000; // 5 minutes
+    private static final int DPP_ENROLLEE_CONN_STATUS_RESULT_TX_TIMEOUT_MS = 16_000; // 16 seconds
     public static final int DPP_AUTH_ROLE_INACTIVE = -1;
     public static final int DPP_AUTH_ROLE_INITIATOR = 0;
     public static final int DPP_AUTH_ROLE_RESPONDER = 1;
@@ -740,7 +741,11 @@ public class DppManager {
         if (!mDppRequestInfo.connStatusRequested) {
             cleanupDppResources();
         } else {
-            Log.d(TAG, "Wait for enrollee to send connection status");
+            Log.d(TAG, "Wait " + (DPP_ENROLLEE_CONN_STATUS_RESULT_TX_TIMEOUT_MS / 1000)
+                    + " seconds for enrollee to send connection status");
+            mDppTimeoutMessage.cancel();
+            mDppTimeoutMessage.schedule(mClock.getElapsedSinceBootMillis()
+                    + DPP_ENROLLEE_CONN_STATUS_RESULT_TX_TIMEOUT_MS);
         }
     }
 

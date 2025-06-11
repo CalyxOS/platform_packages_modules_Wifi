@@ -544,6 +544,17 @@ public class WifiP2pDevice implements Parcelable {
     }
 
     /**
+     * Get the supported pairing bootstrapping methods for framework internal usage.
+     * @hide
+     */
+    public int getPairingBootStrappingMethods() {
+        if (!Environment.isSdkAtLeastB()) {
+            throw new UnsupportedOperationException();
+        }
+        return mPairingBootstrappingMethods;
+    }
+
+    /**
      * Set the supported pairing bootstrapping methods.
      *
      * @param methods Bitmask of supported
@@ -557,6 +568,14 @@ public class WifiP2pDevice implements Parcelable {
         }
         mPairingBootstrappingMethods = methods;
     }
+
+    /**
+     * Store the Device Identity Resolution (DIR) Info received in USD frame for framework
+     * internal usage.
+     * @hide
+     */
+    @Nullable
+    public WifiP2pDirInfo dirInfo;
 
     @Override
     public boolean equals(Object obj) {

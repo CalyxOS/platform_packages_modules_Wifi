@@ -155,11 +155,11 @@ public class WifiResourceCacheTest {
     public void testOverrideStringArrayResource() {
         mWifiResourceCache.restoreStringArrayValue(String.valueOf(TEST_ID));
         when(mResources.getStringArray(TEST_ID)).thenReturn(STRINGS_1);
-        assertEquals(STRINGS_1, mWifiResourceCache.getStringArray(TEST_ID));
+        assertArrayEquals(STRINGS_1, mWifiResourceCache.getStringArray(TEST_ID));
         mWifiResourceCache.overrideStringArrayValue(String.valueOf(TEST_ID), STRINGS_2);
-        assertEquals(STRINGS_2, mWifiResourceCache.getStringArray(TEST_ID));
+        assertArrayEquals(STRINGS_2, mWifiResourceCache.getStringArray(TEST_ID));
         mWifiResourceCache.restoreStringArrayValue(String.valueOf(TEST_ID));
-        assertEquals(STRINGS_1, mWifiResourceCache.getStringArray(TEST_ID));
+        assertArrayEquals(STRINGS_1, mWifiResourceCache.getStringArray(TEST_ID));
         verify(mResources, times(2)).getStringArray(TEST_ID);
     }
 
@@ -179,5 +179,18 @@ public class WifiResourceCacheTest {
         assertEquals(VALUE_1, mWifiResourceCache.getInteger(TEST_ID + 1));
         verify(mResources, times(2)).getBoolean(TEST_ID);
         verify(mResources, times(2)).getInteger(TEST_ID + 1);
+    }
+
+    @Test
+    public void testHandleLocaleChange() {
+        when(mResources.getStringArray(TEST_ID)).thenReturn(STRINGS_1);
+        when(mResources.getString(TEST_ID + 1)).thenReturn(STRING_1);
+        assertArrayEquals(STRINGS_1, mWifiResourceCache.getStringArray(TEST_ID));
+        assertEquals(STRING_1, mWifiResourceCache.getString(TEST_ID + 1));
+        when(mResources.getStringArray(TEST_ID)).thenReturn(STRINGS_2);
+        when(mResources.getString(TEST_ID + 1)).thenReturn(STRING_2);
+        mWifiResourceCache.handleLocaleChange();
+        assertArrayEquals(STRINGS_2, mWifiResourceCache.getStringArray(TEST_ID));
+        assertEquals(STRING_2, mWifiResourceCache.getString(TEST_ID + 1));
     }
 }

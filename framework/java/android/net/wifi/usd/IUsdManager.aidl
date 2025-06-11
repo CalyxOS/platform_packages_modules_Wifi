@@ -18,7 +18,6 @@ package android.net.wifi.usd;
 
 import android.net.wifi.IBooleanListener;
 import android.net.wifi.usd.Characteristics;
-import android.net.wifi.usd.IAvailabilityCallback;
 import android.net.wifi.usd.IPublishSessionCallback;
 import android.net.wifi.usd.ISubscribeSessionCallback;
 import android.net.wifi.usd.PublishConfig;
@@ -30,15 +29,15 @@ import android.net.wifi.usd.SubscribeConfig;
  * {@hide}
  */
 interface IUsdManager {
-    boolean isSubscriberAvailable();
-    boolean isPublisherAvailable();
-    void registerAvailabilityCallback(IAvailabilityCallback callback);
-    void unregisterAvailabilityCallback(IAvailabilityCallback callback);
     Characteristics getCharacteristics();
-    void sendMessage(int peerId, in byte[] message, in IBooleanListener listener);
+    void sendMessage(int sessionId, int peerId, in byte[] message, in IBooleanListener listener);
     void cancelSubscribe(int sessionId);
     void cancelPublish(int sessionId);
     void updatePublish(int sessionId, in byte[] ssi);
     void publish(in PublishConfig publishConfig, IPublishSessionCallback callback);
     void subscribe(in SubscribeConfig subscribeConfig, ISubscribeSessionCallback callback);
+    void registerSubscriberStatusListener(IBooleanListener listener);
+    void unregisterSubscriberStatusListener(IBooleanListener listener);
+    void registerPublisherStatusListener(IBooleanListener listener);
+    void unregisterPublisherStatusListener(IBooleanListener listener);
 }

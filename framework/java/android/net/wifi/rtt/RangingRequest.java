@@ -20,6 +20,7 @@ import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.SuppressLint;
 import android.annotation.SystemApi;
 import android.net.MacAddress;
 import android.net.wifi.OuiKeyedData;
@@ -34,6 +35,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -44,6 +46,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.StringJoiner;
@@ -59,6 +62,7 @@ import java.util.StringJoiner;
  * {@link RangingRequest.Builder#addAccessPoints(List)}).
  */
 public final class RangingRequest implements Parcelable {
+    private static final String TAG = "RangingRequest";
     private static final int MAX_PEERS = 10;
     private static final int DEFAULT_RTT_BURST_SIZE = 8;
     private static final int MIN_RTT_BURST_SIZE = 2;
@@ -601,10 +605,44 @@ public final class RangingRequest implements Parcelable {
 
 
         /**
+         * Filter the peer list for the security modes SECURITY_MODE_SECURE_AUTH and
+         * SECURITY_MODE_OPEN.
+         */
+        @SuppressLint("NewApi")
+        private void filterRttPeersBasedOnSecurityMode() {
+            Iterator<ResponderConfig> peers = mRttPeers.iterator();
+            while (peers.hasNext()) {
+                ResponderConfig peer = peers.next();
+                SecureRangingConfig config = peer.getSecureRangingConfig();
+                // For SECURITY_MODE_SECURE_AUTH, remove any non-authenticated peer.
+                if (mSecurityMode == SECURITY_MODE_SECURE_AUTH) {
+                    PasnConfig pasn = (config != null) ? config.getPasnConfig() : null;
+                    if (pasn == null || pasn.getBaseAkms() == PasnConfig.AKM_PASN) {
+                        peers.remove();
+                        Log.i(TAG, "SECURITY_MODE_SECURE_AUTH is set, removing non-secure peer: "
+                                + peer.getMacAddress());
+                    }
+                } else if (mSecurityMode == SECURITY_MODE_OPEN) {
+                    // For SECURITY_MODE_OPEN, remove any frame protection enabled peer.
+                    // At AIDL level, secure config will not be passed to HAL.
+                    if (config.isRangingFrameProtectionEnabled()) {
+                        peers.remove();
+                        Log.i(TAG, "SECURITY_MODE_OPEN is set, removing secure peer: "
+                                + peer.getMacAddress());
+                    }
+                }
+            }
+        }
+
+
+        /**
          * Build {@link RangingRequest} given the current configurations made on the
          * builder.
          */
         public RangingRequest build() {
+            if (mSecurityMode != SECURITY_MODE_OPPORTUNISTIC) {
+                filterRttPeersBasedOnSecurityMode();
+            }
             return new RangingRequest(mRttPeers, mRttBurstSize, mSecurityMode, mVendorData);
         }
     }

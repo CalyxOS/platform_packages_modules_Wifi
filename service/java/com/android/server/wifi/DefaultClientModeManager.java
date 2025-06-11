@@ -83,7 +83,7 @@ public class DefaultClientModeManager implements ClientModeManager, ClientModeDe
     }
 
     @Override
-    public @NonNull BitSet getSupportedFeatures() {
+    public @NonNull BitSet getSupportedFeaturesBitSet() {
         return new BitSet();
     }
 
