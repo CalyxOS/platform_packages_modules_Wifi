@@ -16,6 +16,23 @@
       "message": "I am not familiar with that code at all and I am not sure what the use-case for such a feature is. I have some concern about battery usage when using the exact alarm when idle. But the code looks ok. I don\u0027t know what the conflicts were, but in its current state, this looks like it should work. Needs actual testing though.",
       "revId": "25b631e74b611ab88631188f407a720fb51a3b2c",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "17f8a092_c8ed8a60",
+        "filename": "service/java/com/android/server/wifi/WifiServiceImpl.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 1266,
+      "author": {
+        "id": 1000003
+      },
+      "writtenOn": "2026-03-18T13:10:10Z",
+      "side": 1,
+      "message": "I am not sure if this cancel method which takes the listener directly will actually work, because below, we are wrapping it inside a `HandlerExecutor`, so the AlarmManager may not find our listener and not cancel it. If that happens, we\u0027d end up with lots of unnecessary alarms further draining the battery.",
+      "revId": "25b631e74b611ab88631188f407a720fb51a3b2c",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
