@@ -33,6 +33,24 @@
       "message": "I am not sure if this cancel method which takes the listener directly will actually work, because below, we are wrapping it inside a `HandlerExecutor`, so the AlarmManager may not find our listener and not cancel it. If that happens, we\u0027d end up with lots of unnecessary alarms further draining the battery.",
       "revId": "25b631e74b611ab88631188f407a720fb51a3b2c",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "d3a00a58_02678c27",
+        "filename": "service/java/com/android/server/wifi/WifiServiceImpl.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 1266,
+      "author": {
+        "id": 1000004
+      },
+      "writtenOn": "2026-04-03T09:33:22Z",
+      "side": 1,
+      "message": "This code has been the same since Android 15, if there\u0027s an issue it can be fixed in a future commit.",
+      "parentUuid": "17f8a092_c8ed8a60",
+      "revId": "25b631e74b611ab88631188f407a720fb51a3b2c",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
