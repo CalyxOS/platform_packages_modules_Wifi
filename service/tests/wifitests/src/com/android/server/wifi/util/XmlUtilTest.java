@@ -690,12 +690,12 @@ public class XmlUtilTest extends WifiBaseTest {
 
     /**
      * Verify that deserializing an XML without SEND_DHCP_HOSTNAME will automatically set the value
-     * to true for secure networks.
+     * to false for secure networks.
      * @throws IOException
      * @throws XmlPullParserException
      */
     @Test
-    public void testSendDhcpHostnameEnabledUpgradeToTrueForSecure()
+    public void testSendDhcpHostnameEnabledUpgradeToFalseForSecure()
             throws IOException, XmlPullParserException {
         final XmlSerializer out = new FastXmlSerializer();
         final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -713,12 +713,12 @@ public class XmlUtilTest extends WifiBaseTest {
         Pair<String, WifiConfiguration> retrieved =
                 deserializeWifiConfiguration(outputStream.toByteArray(), false);
 
-        assertTrue(retrieved.second.isSendDhcpHostnameEnabled());
+        assertFalse(retrieved.second.isSendDhcpHostnameEnabled());
     }
 
     /**
      * Verify that deserializing an XML without SEND_DHCP_HOSTNAME will automatically set the value
-     * to true for secure networks.
+     * to false for open networks.
      * @throws IOException
      * @throws XmlPullParserException
      */
@@ -1085,7 +1085,7 @@ public class XmlUtilTest extends WifiBaseTest {
 
     /**
      * Verify that when AllowedAutoJoinInAdvancedProtection is not in the XML file, the
-     * corresponding field defaults to true for secure networks.
+     * corresponding field defaults to false for open networks.
      */
     @Test
     public void testAllowedAutoJoinInAdvancedProtection_DefaultToTrueForSecure()

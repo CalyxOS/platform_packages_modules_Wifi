@@ -8644,20 +8644,20 @@ public class WifiConfigManagerTest extends WifiBaseTest {
                 .thenReturn(false);
         WifiConfiguration config = WifiConfigurationTestUtil.createOpenNetwork();
 
-        // Fail to add if dhcp hostname setting is set to DO_NOT_SEND
-        config.setSendDhcpHostnameEnabled(false);
+        // Fail to add if dhcp hostname setting is changed from the default DO_NOT_SEND
+        config.setSendDhcpHostnameEnabled(true);
         NetworkUpdateResult result = addNetworkToWifiConfigManager(config);
         assertFalse(result.isSuccess());
 
-        // Can add if dhcp hostname setting is reset to default SEND
-        config.setSendDhcpHostnameEnabled(true);
+        // Can add if dhcp hostname setting is left at the default DO_NOT_SEND
+        config.setSendDhcpHostnameEnabled(false);
         result = addNetworkToWifiConfigManager(config);
         assertTrue(result.isSuccess());
         config = mWifiConfigManager.getConfiguredNetwork(result.getNetworkId());
-        assertTrue(config.isSendDhcpHostnameEnabled());
+        assertFalse(config.isSendDhcpHostnameEnabled());
 
-        // Fail to update if dchp hostname setting is set to DO_NOT_SEND
-        config.setSendDhcpHostnameEnabled(false);
+        // Fail to update if dchp hostname setting is changed from the default DO_NOT_SEND
+        config.setSendDhcpHostnameEnabled(true);
         result = updateNetworkToWifiConfigManager(config);
         assertFalse(result.isSuccess());
     }

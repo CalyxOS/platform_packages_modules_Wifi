@@ -1213,10 +1213,8 @@ public class XmlUtil {
                 configuration.macRandomizationSetting = WifiConfiguration.RANDOMIZATION_AUTO;
             }
             if (!sendDhcpHostnameExists) {
-                // Update legacy configs to send the DHCP hostname for secure networks only.
-                configuration.setSendDhcpHostnameEnabled(
-                        !configuration.isSecurityType(WifiConfiguration.SECURITY_TYPE_OPEN)
-                        && !configuration.isSecurityType(WifiConfiguration.SECURITY_TYPE_OWE));
+                // Default legacy configs to not send the DHCP hostname.
+                configuration.setSendDhcpHostnameEnabled(false);
             }
             if (Environment.isSdkAtLeastC() && Flags.multiUserWifiEnhancement()
                     && !isCreatorUserIdExists) {

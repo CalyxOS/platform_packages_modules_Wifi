@@ -292,12 +292,12 @@ public class WifiConfigurationUtil {
      * @param existingConfig Existing WifiConfiguration object corresponding to the network.
      * @param newConfig      New WifiConfiguration object corresponding to the network.
      * @return true if DHCP hostname setting changed or the existing configuration is
-     * null and the newConfig is setting the DHCP hostname setting to the default value.
+     * null and the newConfig changes the DHCP hostname setting from its default (disabled).
      */
     public static boolean hasSendDhcpHostnameEnabledChanged(WifiConfiguration existingConfig,
             WifiConfiguration newConfig) {
         if (existingConfig == null) {
-            return !newConfig.isSendDhcpHostnameEnabled();
+            return newConfig.isSendDhcpHostnameEnabled();
         }
         return newConfig.isSendDhcpHostnameEnabled() != existingConfig.isSendDhcpHostnameEnabled();
     }
