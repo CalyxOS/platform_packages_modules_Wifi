@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "32e0ec24_2f07470f",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000004
+      },
+      "writtenOn": "2026-09-23T19:04:59Z",
+      "side": 1,
+      "message": "Leaving a negative vote because this needs lots of testing before we consider it",
+      "revId": "c784c744ba798e55293dd026dfc721b4d581a3cc",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    }
+  ]
+}
