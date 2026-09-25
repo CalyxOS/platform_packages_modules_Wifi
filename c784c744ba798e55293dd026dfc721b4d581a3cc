@@ -52,6 +52,23 @@
       "parentUuid": "acc6dab2_7cd2fa8d",
       "revId": "c784c744ba798e55293dd026dfc721b4d581a3cc",
       "serverId": "35266860-6252-469c-a67d-185064479fc0"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "8967675e_deec3dd2",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000109
+      },
+      "writtenOn": "2026-09-25T07:15:53Z",
+      "side": 1,
+      "message": "Isn\u0027t working with 20260924 8.0.0.0 build.\n\nTests:\n\n1. Do new networks added default to not sharing? False\n2. Do networks previously connected default to not sharing? False\n3. Do networks restored from backup default to not sharing? TBD",
+      "revId": "c784c744ba798e55293dd026dfc721b4d581a3cc",
+      "serverId": "35266860-6252-469c-a67d-185064479fc0"
     }
   ]
 }
